@@ -2,7 +2,7 @@
 
 ![build](https://img.shields.io/badge/build-local-lightgrey) ![license](https://img.shields.io/badge/license-MIT-blue)
 
-![App screenshot](Resources/Images/OrganizadorCapitulos.png)
+![App screenshot](Resources/Images/organizadorcapitulos.png)
 
 OrganizadorCapitulos.Maui is a Windows desktop application (Blazor embedded in .NET MAUI) that helps you organize, rename and move episode/chapter video files quickly and safely. The app pairs a modern UI with reusable core logic in `SharedLogic` and an auxiliary Python script for filename cleaning.
 

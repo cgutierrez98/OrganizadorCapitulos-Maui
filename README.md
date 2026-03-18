@@ -2,7 +2,7 @@
 
 ![build](https://img.shields.io/badge/build-local-lightgrey) ![license](https://img.shields.io/badge/license-MIT-blue)
 
-![Captura de la aplicación](Resources/Images/OrganizadorCapitulos.png)
+![Captura de la aplicación](Resources/Images/organizadorcapitulos.png)
 
 OrganizadorCapitulos.Maui es una aplicación de escritorio desarrollada específicamente para Windows (interfaz Blazor embebida en .NET MAUI) diseñada para ayudar a organizar, renombrar y mover archivos de capítulos/episodios de series de forma rápida y segura. La app combina una interfaz moderna con lógica reutilizable en `SharedLogic` y herramientas auxiliares como un script Python para limpieza de nombres.
 
