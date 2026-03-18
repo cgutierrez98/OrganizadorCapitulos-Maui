@@ -11,7 +11,7 @@
     @ondrop="HandleDrop" @ondrop:preventDefault="true" @ondragleave="HandleDragLeave">
 
     <!-- Drag Overlay -->
-    @if (IsDragging)
+    @if (ViewModel.IsDragging)
     {
         <div class="drop-zone-overlay">
             <div class="drop-zone-overlay-text">📂 Suelta aquí para cargar archivos</div>
@@ -51,13 +51,17 @@
                 disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer (Ctrl+Z)">
                 ↩️ @(ViewModel.UndoRedo.UndoCount > 0 ? $"({ViewModel.UndoRedo.UndoCount})" : "")
             </button>
+            <button class="btn btn-outline-danger btn-sm" @onclick="() => ViewModel.UndoAllCommand.Execute(null)"
+                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer todos los cambios">
+                🧹 Deshacer todo
+            </button>
             <button class="btn btn-outline-secondary btn-sm" @onclick="() => ViewModel.RedoCommand.Execute(null)"
                 disabled="@(!ViewModel.UndoRedo.CanRedo || ViewModel.IsProcessing)" title="Rehacer (Ctrl+Y)">
                 ↪️ @(ViewModel.UndoRedo.RedoCount > 0 ? $"({ViewModel.UndoRedo.RedoCount})" : "")
             </button>
 
             <div class="ms-auto d-flex align-items-center gap-2">
-                <button class="theme-toggle" @onclick="() => ViewModel.ThemeService.ToggleThemeAsync()"
+                <button class="theme-toggle" @onclick="async () => { await ViewModel.ThemeService.ToggleThemeAsync(); await InvokeAsync(StateHasChanged); }"
                     title="Cambiar tema">
                     @(ViewModel.ThemeService.IsDarkTheme ? "☀️" : "🌙")
                 </button>
@@ -144,46 +148,35 @@
 }
 
 @code {
-    private bool IsDragging = false;
-
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        // Initialize services (theme, etc.) from the ViewModel
+        await ViewModel.InitializeAsync();
+        ViewModel.PropertyChanged += ViewModelPropertyChanged;
     }
 
-    public void Dispose()
-    {
-        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void ViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         InvokeAsync(StateHasChanged);
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await ViewModel.InitializeAsync();
-        }
-    }
-
-    #region Drag and Drop
     private void HandleDragOver(DragEventArgs e)
     {
-        IsDragging = true;
+        ViewModel.SetDragging(true);
     }
 
     private void HandleDragLeave(DragEventArgs e)
     {
-        IsDragging = false;
+        ViewModel.SetDragging(false);
     }
 
     private async Task HandleDrop(DragEventArgs e)
     {
-        IsDragging = false;
-        ViewModel.StatusMessage = "Usa el botón 'Cargar' para seleccionar carpetas";
+        await ViewModel.HandleDropAsync();
     }
-    #endregion
+
+    public void Dispose()
+    {
+        ViewModel.PropertyChanged -= ViewModelPropertyChanged;
+    }
 }

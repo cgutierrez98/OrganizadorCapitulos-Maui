@@ -67,6 +67,9 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [ObservableProperty]
         private bool _showingSaveAll;
 
+        [ObservableProperty]
+        private bool _isDragging;
+
         public bool IsNotProcessing => !IsProcessing;
 
         // Filter properties
@@ -116,6 +119,19 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         public async Task InitializeAsync()
         {
             await _themeService.InitializeAsync();
+        }
+
+        public void SetDragging(bool dragging)
+        {
+            IsDragging = dragging;
+        }
+
+        public async Task HandleDropAsync()
+        {
+            // Default drop behavior: inform user to use the folder browser
+            IsDragging = false;
+            StatusMessage = "Usa el botón 'Cargar' para seleccionar carpetas";
+            await Task.CompletedTask;
         }
 
         [RelayCommand]
@@ -324,6 +340,38 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             }
 
             IsProcessing = false;
+        }
+
+        [RelayCommand]
+        private async Task UndoAllAsync()
+        {
+            if (!_undoRedoService.CanUndo) return;
+
+            IsProcessing = true;
+            StatusMessage = "Deshaciendo todas las operaciones...";
+
+            int totalUndone = 0;
+
+            while (_undoRedoService.CanUndo)
+            {
+                try
+                {
+                    var result = await _undoRedoService.UndoAsync();
+                    if (!result.success) break;
+                    totalUndone += result.count;
+                }
+                catch
+                {
+                    break;
+                }
+            }
+
+            IsProcessing = false;
+            StatusMessage = totalUndone > 0 ? $"Deshecho: {totalUndone} archivo(s)" : "No hubo operaciones deshechas";
+
+            // Refresh file list state
+            OnPropertyChanged(nameof(FileCounts));
+            OnPropertyChanged(nameof(FilteredFiles));
         }
 
         [RelayCommand]

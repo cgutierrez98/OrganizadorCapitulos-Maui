@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace OrganizadorCapitulos.Maui.Services
 {
@@ -29,7 +30,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 Directory.CreateDirectory(appFolder);
 
             _logPath = Path.Combine(appFolder, "operations.log.json");
-            LoadLog();
+            _ = Task.Run(async () => await LoadLogAsync().ConfigureAwait(false));
         }
 
         public void LogRename(string oldPath, string newPath, bool success = true, string? error = null)
@@ -95,22 +96,22 @@ namespace OrganizadorCapitulos.Maui.Services
                 _entries.RemoveAt(_entries.Count - 1);
             }
 
-            SaveLog();
+            _ = SaveLogAsync();
         }
 
         public void Clear()
         {
             _entries.Clear();
-            SaveLog();
+            _ = SaveLogAsync();
         }
 
-        private void LoadLog()
+        private async Task LoadLogAsync()
         {
             try
             {
                 if (File.Exists(_logPath))
                 {
-                    var json = File.ReadAllText(_logPath);
+                    var json = await File.ReadAllTextAsync(_logPath).ConfigureAwait(false);
                     var entries = JsonSerializer.Deserialize<List<LogEntry>>(json);
                     if (entries != null)
                     {
@@ -124,7 +125,7 @@ namespace OrganizadorCapitulos.Maui.Services
             }
         }
 
-        private void SaveLog()
+        private async Task SaveLogAsync()
         {
             try
             {
@@ -132,7 +133,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 {
                     WriteIndented = true
                 });
-                File.WriteAllText(_logPath, json);
+                await File.WriteAllTextAsync(_logPath, json).ConfigureAwait(false);
             }
             catch
             {

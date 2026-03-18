@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace OrganizadorCapitulos.Maui.Services
 {
     public class AppSettings
     {
         public string TmdbApiKey { get; set; } = "";
+        public string Theme { get; set; } = "light";
     }
 
     public class SettingsService
@@ -24,7 +26,8 @@ namespace OrganizadorCapitulos.Maui.Services
             }
             
             _settingsPath = Path.Combine(appFolder, "settings.json");
-            LoadSettings();
+            // Load settings in background to avoid blocking UI during startup
+            _ = Task.Run(async () => await LoadSettingsAsync().ConfigureAwait(false));
         }
 
         public string TmdbApiKey
@@ -33,17 +36,28 @@ namespace OrganizadorCapitulos.Maui.Services
             set
             {
                 _settings.TmdbApiKey = value;
-                SaveSettings();
+                // Fire-and-forget save to avoid blocking caller; log internally on error
+                _ = Task.Run(async () => await SaveSettingsAsync().ConfigureAwait(false));
             }
         }
 
-        private void LoadSettings()
+        public string Theme
+        {
+            get => _settings.Theme;
+            set
+            {
+                _settings.Theme = value;
+                _ = Task.Run(async () => await SaveSettingsAsync().ConfigureAwait(false));
+            }
+        }
+
+        private async Task LoadSettingsAsync()
         {
             try
             {
                 if (File.Exists(_settingsPath))
                 {
-                    var json = File.ReadAllText(_settingsPath);
+                    var json = await File.ReadAllTextAsync(_settingsPath).ConfigureAwait(false);
                     _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
                 }
             }
@@ -53,7 +67,7 @@ namespace OrganizadorCapitulos.Maui.Services
             }
         }
 
-        private void SaveSettings()
+        private async Task SaveSettingsAsync()
         {
             try
             {
@@ -61,7 +75,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 { 
                     WriteIndented = true 
                 });
-                File.WriteAllText(_settingsPath, json);
+                await File.WriteAllTextAsync(_settingsPath, json).ConfigureAwait(false);
             }
             catch
             {

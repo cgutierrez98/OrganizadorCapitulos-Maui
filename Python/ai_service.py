@@ -3,6 +3,22 @@ import json
 import re
 import argparse
 
+# Protect against extremely long inputs that could trigger expensive regex work
+MAX_INPUT_LENGTH = 800
+
+def safe_int(value, default=0):
+    try:
+        if value is None:
+            return default
+        if isinstance(value, int):
+            return value
+        v = str(value).strip()
+        if v == "":
+            return default
+        return int(v)
+    except Exception:
+        return default
+
 # Quality/release tags to remove
 QUALITY_TAGS = {
     # Resolution
@@ -110,6 +126,12 @@ def analyze_filename(filename):
         "original": filename
     }
     
+    # Protect and normalize input length
+    if not isinstance(filename, str):
+        filename = str(filename or "")
+    if len(filename) > MAX_INPUT_LENGTH:
+        filename = filename[:MAX_INPUT_LENGTH]
+
     # Remove extension
     name = re.sub(r'\.(mkv|mp4|avi|wmv|mov|flv|webm)$', '', filename, flags=re.IGNORECASE)
     
@@ -120,9 +142,14 @@ def analyze_filename(filename):
         # 1x01 format
         r"(?P<series>.+?)[_.\s-]+(?P<season>\d{1,2})x(?P<episode>\d{2,3})(?:[_.\s-]+(?P<title>.+))?",
         # Season X Episode X
+        # Season X Episode X
         r"(?P<series>.+?)[.\s_-]+Season[.\s_-]?(?P<season>\d{1,2})[.\s_-]+Episode[.\s_-]?(?P<episode>\d{1,3})(?:[.\s_-]+(?P<title>.+))?",
         # Spanish: Temporada/Capitulo
         r"(?P<series>.+?)[.\s_-]+(?:Temp|Temporada)[.\s_-]?(?P<season>\d{1,2})[.\s_-]+(?:Cap|Capitulo)[.\s_-]?(?P<episode>\d{1,3})(?:[.\s_-]+(?P<title>.+))?",
+        # Formats like "Show.Name - 01 - Title" or "Show Name - 01"
+        r"(?P<series>.+?)[\s-]+-(?:\s)?(?P<episode>\d{1,3})(?:[\s-]+-(?:\s)?(?P<title>.+))?",
+        # Formats like "Show.Name.S01.E01" or "Show.Name.S01.E01.Title"
+        r"(?P<series>.+?)[.\s_-]+[Ss](?P<season>\d{1,2})[.\s_-]?[Ee](?P<episode>\d{1,3})(?:[.\s_-]+(?P<title>.+))?",
     ]
     
     for pattern in patterns:
@@ -130,9 +157,9 @@ def analyze_filename(filename):
         if match:
             groups = match.groupdict()
             result["series"] = clean_series_name(groups.get("series", ""))
-            result["season"] = int(groups.get("season", 0))
-            result["episode"] = int(groups.get("episode", 0))
-            
+            result["season"] = safe_int(groups.get("season", 0))
+            result["episode"] = safe_int(groups.get("episode", 0))
+
             raw_title = groups.get("title", "") or ""
             result["title"] = clean_episode_title(raw_title)
             
@@ -147,9 +174,36 @@ def analyze_filename(filename):
         if len(series) > 2:
             result["series"] = series
             result["season"] = 1
-            result["episode"] = int(groups.get("episode", 0))
+            result["episode"] = safe_int(groups.get("episode", 0))
             result["title"] = clean_episode_title(groups.get("title", "") or "")
     
+    # Heuristic fallback: accumulate tokens until we hit a quality tag or an SxxExx marker
+    tokens = re.split(r'[.\s_\-]+', name)
+    series_tokens = []
+    for t in tokens:
+        if not t: continue
+        if is_quality_word(t):
+            break
+        if re.match(r'^[Ss]?\d{1,2}[Ee]\d{1,3}$', t, re.IGNORECASE):
+            break
+        if re.match(r'^\d{1,3}x\d{2,3}$', t, re.IGNORECASE):
+            break
+        # stop at explicit 'season' or 'temp' markers
+        if re.match(r'^(season|temp|temporada|capitulo|ep)$', t, re.IGNORECASE):
+            break
+        series_tokens.append(t)
+
+    if series_tokens:
+        candidate = ' '.join(series_tokens)
+        candidate = clean_series_name(candidate)
+        if len(candidate) > 2:
+            result['series'] = candidate
+            # If last token is numeric we may treat it as episode
+            last = tokens[-1]
+            if re.match(r'^\d{1,3}$', last):
+                result['episode'] = safe_int(last)
+                result['season'] = 1
+
     return result
 
 def normalize_title(text):

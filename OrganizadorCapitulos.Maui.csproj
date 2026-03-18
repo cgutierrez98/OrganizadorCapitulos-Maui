@@ -20,6 +20,9 @@
         <EnableDefaultCssItems>false</EnableDefaultCssItems>
         <Nullable>enable</Nullable>
 
+        <!-- Suppress MVVM Toolkit AOT warning in app builds; address with partial properties if WinRT/WinUI targeting is required -->
+        <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
+
         <!-- Display name -->
         <ApplicationTitle>OrganizadorCapitulos.Maui</ApplicationTitle>
 
@@ -80,6 +83,8 @@
     <!-- Prevent duplicate Compile items by removing default includes for SharedLogic, then include them explicitly -->
     <ItemGroup>
       <Compile Remove="SharedLogic\**\*.cs" />
+      <!-- Exclude test sources from the app build (tests live in the repository but should not be compiled into the app) -->
+      <Compile Remove="tests\**\*.cs" />
     </ItemGroup>
 
     <ItemGroup>

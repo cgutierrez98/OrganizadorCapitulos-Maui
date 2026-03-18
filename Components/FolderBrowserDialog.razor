@@ -1,4 +1,5 @@
 @using System.IO
+@using System.Runtime.InteropServices
 @using OrganizadorCapitulos.Maui.Components
 
 <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
@@ -58,7 +59,15 @@
         }
         catch
         {
-            Drives = new List<string> { "C:\\" };
+            // Fallback por plataforma: en Windows usar C:\, en otras plataformas usar raiz '/'
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Drives = new List<string> { "C:\\" };
+            }
+            else
+            {
+                Drives = new List<string> { "/" };
+            }
         }
     }
 
