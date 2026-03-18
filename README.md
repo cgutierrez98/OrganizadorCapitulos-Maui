@@ -112,10 +112,3 @@ Recomendaciones de integración Python:
 
 - Para llamar al script `Python/ai_service.py` desde .NET, use `System.Diagnostics.Process` o un pequeño servidor HTTP local en Python y comuníquese por HTTP/JSON.
 - Asegure manejo de errores y timeouts. Mantenga `IsAvailable()` como gate para la UI.
-
-**Notas finales**
-
-- He añadido badges y documentado pasos de publicación y puntos de extensión.
-- ¿Quieres que también genere un `LICENSE` (MIT, Apache-2.0, etc.) y añada badges enlazados a CI real?
-
-Creado por el asistente: README ampliado con publicación y guía de extensibilidad.
