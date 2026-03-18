@@ -1,0 +1,91 @@
+@inject organizadorCapitulos.Core.Interfaces.Services.IMetadataService MetadataService
+@inject OrganizadorCapitulos.Maui.Services.SettingsService Settings
+
+<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title">⚙️ Configuración</h5>
+                <button type="button" class="btn-close" @onclick="Cancel"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">API Key de TMDB</label>
+                    <input type="password" class="form-control" @bind="ApiKey"
+                        placeholder="Ingresa tu API Key de TMDB" />
+                    <div class="form-text">
+                        Obtén tu API Key gratis en
+                        <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(StatusMessage))
+                {
+                    <div class="alert @(IsSuccess ? "alert-success" : "alert-danger") py-2 small">
+                        @StatusMessage
+                    </div>
+                }
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Save">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string ApiKey = "";
+    private string StatusMessage = "";
+    private bool IsSuccess = false;
+
+    protected override void OnInitialized()
+    {
+        // Load saved API key from settings
+        ApiKey = Settings.TmdbApiKey;
+
+        // If there's a saved key, configure the service
+        if (!string.IsNullOrEmpty(ApiKey))
+        {
+            MetadataService.Configure(ApiKey);
+        }
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(ApiKey))
+        {
+            StatusMessage = "Por favor ingresa una API Key válida";
+            IsSuccess = false;
+            return;
+        }
+
+        try
+        {
+            // Save to JSON file
+            Settings.TmdbApiKey = ApiKey;
+
+            // Configure the service
+            MetadataService.Configure(ApiKey);
+
+            StatusMessage = "Configuración guardada correctamente";
+            IsSuccess = true;
+
+            await Task.Delay(1000);
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            IsSuccess = false;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

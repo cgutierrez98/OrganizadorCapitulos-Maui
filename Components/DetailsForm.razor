@@ -1,0 +1,69 @@
+@using OrganizadorCapitulos.Maui.Models
+
+@if (SelectedFile == null)
+{
+        <div class="text-center text-muted py-4">
+            <div style="font-size: 2rem;">📝</div>
+            <p class="small">Selecciona un archivo para ver y editar sus detalles</p>
+        </div>
+}
+else
+{
+        <div class="mb-3">
+            <label class="form-label small fw-bold">Nombre de la Serie</label>
+            <input type="text" 
+                   class="form-control form-control-sm" 
+                   @bind="SelectedFile.SeriesTitle" 
+                   @bind:after="OnChanged" 
+                   placeholder="Ej: Breaking Bad" />
+        </div>
+
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <label class="form-label small fw-bold">Temporada</label>
+                <input type="number" 
+                       class="form-control form-control-sm" 
+                       @bind="SelectedFile.Season" 
+                       @bind:after="OnChanged" 
+                       min="1" />
+            </div>
+            <div class="col-6">
+                <label class="form-label small fw-bold">Episodio</label>
+                <input type="number" 
+                       class="form-control form-control-sm" 
+                       @bind="SelectedFile.Episode" 
+                       @bind:after="OnChanged" 
+                       min="1" />
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label small fw-bold">Título del Episodio</label>
+            <input type="text" 
+                   class="form-control form-control-sm" 
+                   @bind="SelectedFile.EpisodeTitle" 
+                   @bind:after="OnChanged" 
+                   placeholder="Ej: Pilot (opcional)" />
+        </div>
+
+    @if (!string.IsNullOrEmpty(SelectedFile.NewName))
+    {
+                <div class="alert alert-info py-2 small">
+                    <strong>Vista previa:</strong><br/>
+            @SelectedFile.NewName
+                </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public FileViewModel? SelectedFile { get; set; }
+
+    [Parameter]
+    public EventCallback OnChange { get; set; }
+
+    private async Task OnChanged()
+    {
+        await OnChange.InvokeAsync();
+    }
+}

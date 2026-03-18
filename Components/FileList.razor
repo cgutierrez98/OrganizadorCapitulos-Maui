@@ -1,0 +1,156 @@
+@using OrganizadorCapitulos.Maui.Models
+@using organizadorCapitulos.Core.Enums
+@using System.Collections.ObjectModel
+
+<!-- Filter Pills -->
+<div class="filter-pills">
+    <button class="filter-pill @(CurrentFilter == null ? "active" : "")" @onclick='() => SetFilter(null)'>
+        Todos (@Files.Count)
+    </button>
+    <button class="filter-pill @(CurrentFilter == FileStatus.Pending ? "active" : "")"
+        @onclick='() => SetFilter(FileStatus.Pending)'>
+        Pendientes (@Files.Count(f => f.Status == FileStatus.Pending))
+    </button>
+    <button class="filter-pill @(CurrentFilter == FileStatus.Analyzed ? "active" : "")"
+        @onclick='() => SetFilter(FileStatus.Analyzed)'>
+        Analizados (@Files.Count(f => f.Status == FileStatus.Analyzed))
+    </button>
+    <button class="filter-pill @(CurrentFilter == FileStatus.Done ? "active" : "")"
+        @onclick='() => SetFilter(FileStatus.Done)'>
+        Hechos (@Files.Count(f => f.Status == FileStatus.Done))
+    </button>
+    <button class="filter-pill @(CurrentFilter == FileStatus.Error ? "active" : "")"
+        @onclick='() => SetFilter(FileStatus.Error)'>
+        Errores (@Files.Count(f => f.Status == FileStatus.Error))
+    </button>
+</div>
+
+@if (!FilteredFiles.Any())
+{
+    <div class="d-flex align-items-center justify-content-center h-100 text-muted" style="min-height: 200px;">
+        <div class="text-center">
+            <div style="font-size: 3rem;">📁</div>
+            <p>@(Files.Any() ? "No hay archivos con este filtro" : "Haz clic en \"Cargar Carpetas\" para comenzar")</p>
+        </div>
+    </div>
+}
+else
+{
+    <table class="table table-sm table-hover table-themed mb-0">
+        <thead>
+            <tr>
+                <th @onclick='() => SortBy("Name")' style="width: 45%;">
+                    Nombre Original
+                    <span class="sort-indicator @(SortColumn == "Name" ? "active" : "")">
+                        @(SortColumn == "Name" ? (SortAscending ? "▲" : "▼") : "○")
+                    </span>
+                </th>
+                <th @onclick='() => SortBy("Preview")' style="width: 35%;">
+                    Vista Previa
+                    <span class="sort-indicator @(SortColumn == "Preview" ? "active" : "")">
+                        @(SortColumn == "Preview" ? (SortAscending ? "▲" : "▼") : "○")
+                    </span>
+                </th>
+                <th @onclick='() => SortBy("Status")' style="width: 20%;">
+                    Estado
+                    <span class="sort-indicator @(SortColumn == "Status" ? "active" : "")">
+                        @(SortColumn == "Status" ? (SortAscending ? "▲" : "▼") : "○")
+                    </span>
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var file in FilteredFiles)
+            {
+                <tr @onclick="() => SelectFile(file)" class="@(file.IsSelected ? "row-selected" : "")" style="cursor: pointer;">
+                    <td class="text-truncate" style="max-width: 200px;" title="@file.OriginalName">
+                        @file.OriginalName
+                    </td>
+                    <td class="text-truncate" style="max-width: 150px; color: var(--accent-color);" title="@file.NewName">
+                        @(string.IsNullOrEmpty(file.NewName) ? "-" : file.NewName)
+                    </td>
+                    <td>
+                        <span class="badge @GetBadgeClass(file.Status)">
+                            @GetStatusText(file.Status)
+                        </span>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter]
+    public ObservableCollection<FileViewModel> Files { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<FileViewModel> OnFileSelected { get; set; }
+
+    private FileStatus? CurrentFilter = null;
+    private string SortColumn = "Name";
+    private bool SortAscending = true;
+
+    private IEnumerable<FileViewModel> FilteredFiles
+    {
+        get
+        {
+            var filtered = CurrentFilter.HasValue
+            ? Files.Where(f => f.Status == CurrentFilter.Value)
+            : Files;
+
+            return SortColumn switch
+            {
+                "Name" => SortAscending
+                ? filtered.OrderBy(f => f.OriginalName)
+                : filtered.OrderByDescending(f => f.OriginalName),
+                "Preview" => SortAscending
+                ? filtered.OrderBy(f => f.NewName)
+                : filtered.OrderByDescending(f => f.NewName),
+                "Status" => SortAscending
+                ? filtered.OrderBy(f => f.Status)
+                : filtered.OrderByDescending(f => f.Status),
+                _ => filtered
+            };
+        }
+    }
+
+    private void SetFilter(FileStatus? filter)
+    {
+        CurrentFilter = filter;
+    }
+
+    private void SortBy(string column)
+    {
+        if (SortColumn == column)
+        {
+            SortAscending = !SortAscending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortAscending = true;
+        }
+    }
+
+    private async Task SelectFile(FileViewModel file)
+    {
+        await OnFileSelected.InvokeAsync(file);
+    }
+
+    private string GetBadgeClass(FileStatus status) => status switch
+    {
+        FileStatus.Done => "badge-done",
+        FileStatus.Analyzed => "badge-analyzed",
+        FileStatus.Error => "badge-error",
+        _ => "badge-pending"
+    };
+
+    private string GetStatusText(FileStatus status) => status switch
+    {
+        FileStatus.Done => "✓ Hecho",
+        FileStatus.Analyzed => "Analizado",
+        FileStatus.Error => "Error",
+        _ => "Pendiente"
+    };
+}

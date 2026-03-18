@@ -1,0 +1,104 @@
+@using OrganizadorCapitulos.Maui.Services
+@inject OperationLogService LogService
+
+<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title">📋 Historial de Operaciones</h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
+                @if (!LogService.Entries.Any())
+                {
+                    <div class="p-4 text-center text-muted">
+                        No hay operaciones registradas
+                    </div>
+                }
+                else
+                {
+                    <table class="table table-sm table-themed mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 140px;">Fecha/Hora</th>
+                                <th style="width: 80px;">Acción</th>
+                                <th>Origen</th>
+                                <th>Destino</th>
+                                <th style="width: 70px;">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in LogService.Entries.Take(100))
+                            {
+                                <tr>
+                                    <td class="small">@entry.Timestamp.ToString("dd/MM HH:mm:ss")</td>
+                                    <td>
+                                        <span class="badge @GetActionBadgeClass(entry.Action)">
+                                            @entry.Action
+                                        </span>
+                                    </td>
+                                    <td class="small text-truncate" style="max-width: 200px;" title="@entry.OldName">
+                                        @entry.OldName
+                                    </td>
+                                    <td class="small text-truncate" style="max-width: 200px;" title="@entry.NewName">
+                                        @entry.NewName
+                                    </td>
+                                    <td>
+                                        @if (entry.Status == "Success")
+                                        {
+                                            <span class="badge bg-success">✓</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger" title="@entry.Error">✗</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div class="modal-footer py-2">
+                <span class="text-muted small me-auto">
+                    @LogService.Entries.Count operaciones registradas
+                </span>
+                <button type="button" class="btn btn-outline-danger btn-sm" @onclick="ClearLog"
+                    disabled="@(!LogService.Entries.Any())">
+                    🗑️ Limpiar
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string GetActionBadgeClass(string action)
+    {
+        return action switch
+        {
+            "Rename" => "bg-primary",
+            "Undo" => "bg-warning text-dark",
+            "Redo" => "bg-info text-dark",
+            "Move" => "bg-success",
+            _ => "bg-secondary"
+        };
+    }
+
+    private void ClearLog()
+    {
+        LogService.Clear();
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

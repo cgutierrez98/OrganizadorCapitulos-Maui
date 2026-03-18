@@ -1,0 +1,96 @@
+@using System.IO
+@using OrganizadorCapitulos.Maui.Components
+
+<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title">Seleccionar Carpetas</h5>
+                <button type="button" class="btn-close" @onclick="Cancel"></button>
+            </div>
+            <div class="modal-body p-0" style="height: 400px; overflow-y: auto;">
+                <div class="list-group list-group-flush">
+                    @foreach (var drive in Drives)
+                    {
+                        <FolderNode Path="@drive" Name="@drive" Level="0" SelectedFolders="@SelectedFolders"
+                            OnSelectionChanged="OnSelectionChanged" IsSingleMode="@IsSingleSelectionMode" />
+                    }
+                </div>
+            </div>
+            <div class="modal-footer py-2 d-flex justify-content-between">
+                <span class="text-muted small">
+                    @(IsSingleSelectionMode
+                        ? (SelectedFolders.Any() ? "1 carpeta seleccionada" : "Ninguna carpeta seleccionada")
+                        : $"{SelectedFolders.Count} carpetas seleccionadas")
+                </span>
+                <div>
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="Accept"
+                        disabled="@(!SelectedFolders.Any())">Aceptar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsSingleSelectionMode { get; set; } = false;
+
+    [Parameter]
+    public EventCallback<List<string>> OnAccept { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private List<string> Drives = new();
+    private HashSet<string> SelectedFolders = new();
+
+    protected override void OnInitialized()
+    {
+        // Cargar las unidades disponibles
+        try
+        {
+            Drives = DriveInfo.GetDrives()
+            .Where(d => d.IsReady)
+            .Select(d => d.Name)
+            .ToList();
+        }
+        catch
+        {
+            Drives = new List<string> { "C:\\" };
+        }
+    }
+
+    private void OnSelectionChanged((string path, bool isSelected) args)
+    {
+        if (IsSingleSelectionMode && args.isSelected)
+        {
+            SelectedFolders.Clear();
+        }
+
+        if (args.isSelected)
+        {
+            SelectedFolders.Add(args.path);
+        }
+        else
+        {
+            SelectedFolders.Remove(args.path);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task Accept()
+    {
+        if (SelectedFolders.Any())
+        {
+            await OnAccept.InvokeAsync(SelectedFolders.ToList());
+        }
+    }
+
+    private async Task Cancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+}

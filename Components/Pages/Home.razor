@@ -1,0 +1,189 @@
+﻿@page "/"
+@using OrganizadorCapitulos.Maui.Components
+@using OrganizadorCapitulos.Maui.ViewModels
+@using organizadorCapitulos.Core.Enums
+@using OrganizadorCapitulos.Maui.Services.Interfaces
+@using System.ComponentModel
+@inject HomeViewModel ViewModel
+@implements IDisposable
+
+<div class="d-flex flex-column vh-100" @ondragover="HandleDragOver" @ondragover:preventDefault="true"
+    @ondrop="HandleDrop" @ondrop:preventDefault="true" @ondragleave="HandleDragLeave">
+
+    <!-- Drag Overlay -->
+    @if (IsDragging)
+    {
+        <div class="drop-zone-overlay">
+            <div class="drop-zone-overlay-text">📂 Suelta aquí para cargar archivos</div>
+        </div>
+    }
+
+    <!-- Toolbar -->
+    <nav class="navbar navbar-expand navbar-themed px-3">
+        <div class="d-flex gap-2 flex-wrap align-items-center flex-grow-1">
+            <button class="btn btn-primary btn-sm" @onclick="() => ViewModel.ShowFolderBrowserCommand.Execute(null)">
+                📁 Cargar
+            </button>
+            <div class="vr mx-1"></div>
+            <button class="btn btn-info btn-sm text-white" @onclick="() => ViewModel.AnalyzeWithAICommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)">
+                🤖 IA
+            </button>
+            <button class="btn btn-secondary btn-sm" @onclick="() => ViewModel.OpenTmdbSearchCommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)">
+                🔍 TMDB
+            </button>
+            <div class="vr mx-1"></div>
+            <button class="btn btn-warning btn-sm" @onclick="() => ViewModel.RenameSelectedCommand.Execute(null)"
+                disabled="@(ViewModel.SelectedFile == null || ViewModel.IsProcessing)">
+                ✏️ Renombrar
+            </button>
+            <button class="btn btn-success btn-sm" @onclick="() => ViewModel.RenameAllCommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any(f => f.Status == FileStatus.Analyzed) || ViewModel.IsProcessing)">
+                ✅ Todo
+            </button>
+            <button class="btn btn-outline-primary btn-sm" @onclick="() => ViewModel.OpenSaveAllCommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)">
+                💾 Mover
+            </button>
+            <div class="vr mx-1"></div>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => ViewModel.UndoCommand.Execute(null)"
+                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer (Ctrl+Z)">
+                ↩️ @(ViewModel.UndoRedo.UndoCount > 0 ? $"({ViewModel.UndoRedo.UndoCount})" : "")
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => ViewModel.RedoCommand.Execute(null)"
+                disabled="@(!ViewModel.UndoRedo.CanRedo || ViewModel.IsProcessing)" title="Rehacer (Ctrl+Y)">
+                ↪️ @(ViewModel.UndoRedo.RedoCount > 0 ? $"({ViewModel.UndoRedo.RedoCount})" : "")
+            </button>
+
+            <div class="ms-auto d-flex align-items-center gap-2">
+                <button class="theme-toggle" @onclick="() => ViewModel.ThemeService.ToggleThemeAsync()"
+                    title="Cambiar tema">
+                    @(ViewModel.ThemeService.IsDarkTheme ? "☀️" : "🌙")
+                </button>
+                <button class="btn btn-outline-secondary btn-sm"
+                    @onclick="() => ViewModel.OpenSettingsCommand.Execute(null)">
+                    ⚙️
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Progress Bar (visible during processing) -->
+    @if (ViewModel.IsProcessing)
+    {
+        <div class="px-3 py-2" style="background-color: var(--bg-secondary);">
+            <div class="d-flex justify-content-between small mb-1">
+                <span>@ViewModel.ProgressMessage</span>
+                <span>@ViewModel.ProgressCurrent / @ViewModel.ProgressTotal</span>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar-custom" style="width: @ViewModel.ProgressPercent%"></div>
+            </div>
+        </div>
+    }
+
+    <!-- Main Content Area -->
+    <div class="flex-grow-1 d-flex overflow-hidden">
+        <!-- Left Panel: File List -->
+        <div class="flex-grow-1 d-flex flex-column border-end" style="min-width: 400px;">
+            <div class="panel-header d-flex justify-content-between">
+                <span><strong>Archivos</strong></span>
+                <span class="small">@ViewModel.FileCounts</span>
+            </div>
+            <div class="flex-grow-1 overflow-auto panel-content">
+                <FileList Files="@ViewModel.Files" OnFileSelected="@((f) => ViewModel.SelectFileCommand.Execute(f))" />
+            </div>
+        </div>
+
+        <!-- Right Panel: Details -->
+        <div class="d-flex flex-column" style="width: 320px; min-width: 280px; background-color: var(--bg-secondary);">
+            <div class="panel-header">
+                <strong>Detalles del Capítulo</strong>
+            </div>
+            <div class="flex-grow-1 overflow-auto p-3">
+                <DetailsForm SelectedFile="@ViewModel.SelectedFile"
+                    OnChange="@(() => ViewModel.UpdatePreviewForFileCommand.Execute(null))" />
+                <hr class="my-3" style="border-color: var(--border-color);" />
+                <StrategySelector SelectedMode="@ViewModel.CurrentMode"
+                    OnModeChanged="@((m) => ViewModel.ChangeModeCommand.Execute(m))" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar px-3 py-1 small d-flex justify-content-between">
+        <span>@ViewModel.StatusMessage</span>
+        <span>@DateTime.Now.ToString("HH:mm")</span>
+    </div>
+</div>
+
+@* Dialogs *@
+@if (ViewModel.ShowingFolderBrowser)
+{
+    <FolderBrowserDialog IsSingleSelectionMode="false"
+        OnAccept="@((folders) => ViewModel.LoadFoldersCommand.Execute(folders))"
+        OnCancel="() => ViewModel.HideFolderBrowserCommand.Execute(null)" />
+}
+
+@if (ViewModel.ShowingSettings)
+{
+    <SettingsDialog OnClose="() => ViewModel.CloseSettingsCommand.Execute(null)" />
+}
+
+@if (ViewModel.ShowingTmdbSearch)
+{
+    <TmdbSearchDialog Files="@ViewModel.Files" OnSeriesSelected="@((s) => ViewModel.ApplySeriesMetadataCommand.Execute(s))"
+        OnClose="() => ViewModel.CloseTmdbSearchCommand.Execute(null)" />
+}
+
+@if (ViewModel.ShowingSaveAll)
+{
+    <FolderBrowserDialog IsSingleSelectionMode="true" OnAccept="@((folders) => ViewModel.MoveFilesCommand.Execute(folders))"
+        OnCancel="() => ViewModel.CloseSaveAllCommand.Execute(null)" />
+}
+
+@code {
+    private bool IsDragging = false;
+
+    protected override void OnInitialized()
+    {
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    public void Dispose()
+    {
+        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ViewModel.InitializeAsync();
+        }
+    }
+
+    #region Drag and Drop
+    private void HandleDragOver(DragEventArgs e)
+    {
+        IsDragging = true;
+    }
+
+    private void HandleDragLeave(DragEventArgs e)
+    {
+        IsDragging = false;
+    }
+
+    private async Task HandleDrop(DragEventArgs e)
+    {
+        IsDragging = false;
+        ViewModel.StatusMessage = "Usa el botón 'Cargar' para seleccionar carpetas";
+    }
+    #endregion
+}

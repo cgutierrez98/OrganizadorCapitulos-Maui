@@ -1,0 +1,41 @@
+@using organizadorCapitulos.Core.Enums
+
+<div class="mb-3">
+    <label class="form-label small fw-bold">Modo de Renombrado</label>
+
+    <div class="form-check">
+        <input class="form-check-input" type="radio" name="strategyMode" id="modeMaintain"
+            checked="@(SelectedMode == RenameMode.Maintain)" @onchange="@(() => SelectMode(RenameMode.Maintain))">
+        <label class="form-check-label small" for="modeMaintain">
+            <strong>Mantener estructura</strong>
+            <br />
+            <span class="text-muted">El número de capítulo se incrementará automáticamente</span>
+        </label>
+    </div>
+
+    <div class="form-check mt-2">
+        <input class="form-check-input" type="radio" name="strategyMode" id="modeChange"
+            checked="@(SelectedMode == RenameMode.Change)" @onchange="@(() => SelectMode(RenameMode.Change))">
+        <label class="form-check-label small" for="modeChange">
+            <strong>Cambiar estructura</strong>
+            <br />
+            <span class="text-muted">El número de capítulo se mantendrá igual</span>
+        </label>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public RenameMode SelectedMode { get; set; }
+
+    [Parameter]
+    public EventCallback<RenameMode> OnModeChanged { get; set; }
+
+    private async Task SelectMode(RenameMode mode)
+    {
+        if (SelectedMode != mode)
+        {
+            await OnModeChanged.InvokeAsync(mode);
+        }
+    }
+}

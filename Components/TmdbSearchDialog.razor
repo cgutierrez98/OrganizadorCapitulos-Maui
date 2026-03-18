@@ -1,0 +1,359 @@
+@using organizadorCapitulos.Core.Entities
+@using OrganizadorCapitulos.Maui.Services
+@using organizadorCapitulos.Core.Enums
+@using System.Collections.ObjectModel
+@inject organizadorCapitulos.Core.Interfaces.Services.IMetadataService MetadataService
+@inject SettingsService Settings
+
+<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title">🔍 Buscar Metadatos en TMDB</h5>
+                <button type="button" class="btn-close" @onclick="Cancel"></button>
+            </div>
+            <div class="modal-body">
+                @if (!IsConfigured)
+                {
+                    <div class="alert alert-warning">
+                        <strong>Configuración requerida:</strong> Por favor configura la API Key de TMDB en Configuración.
+                    </div>
+                }
+                else
+                {
+                    <!-- Search Input -->
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" @bind="SearchQuery" @bind:event="oninput"
+                            @onkeypress="OnKeyPress" placeholder="Nombre de la serie..." />
+                        <button class="btn btn-primary" @onclick="Search" disabled="@IsSearching">
+                            @(IsSearching ? "Buscando..." : "Buscar")
+                        </button>
+                    </div>
+
+                    <!-- Search Results -->
+                    @if (SearchResults.Any())
+                    {
+                        <div class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
+                            @foreach (var series in SearchResults)
+                            {
+                                <button type="button"
+                                    class="list-group-item list-group-item-action @(SelectedSeries?.Id == series.Id ? "active" : "")"
+                                    @onclick="() => SelectSeries(series)">
+                                    <strong>@series.Name</strong>
+                                    @if (!string.IsNullOrEmpty(series.FirstAirDate))
+                                    {
+                                        <span class="text-muted small ms-2">(@series.FirstAirDate)</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(StatusMessage))
+                    {
+                        <div class="alert @(IsError ? "alert-danger" : "alert-info") py-2 small">
+                            @StatusMessage
+                        </div>
+                    }
+                }
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
+                <button type="button" class="btn btn-success btn-sm" @onclick="FetchEpisodes"
+                    disabled="@(SelectedSeries == null || IsFetching)">
+                    @(IsFetching ? "Descargando..." : "Descargar Títulos")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public ObservableCollection<OrganizadorCapitulos.Maui.Models.FileViewModel> Files { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<string> OnSeriesSelected { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string SearchQuery = "";
+    private List<SeriesSearchResult> SearchResults = new();
+    private SeriesSearchResult? SelectedSeries;
+    private string StatusMessage = "";
+    private bool IsError = false;
+    private bool IsSearching = false;
+    private bool IsFetching = false;
+    private bool IsConfigured = false;
+
+    protected override void OnInitialized()
+    {
+        // Load saved API key from settings
+        var apiKey = Settings.TmdbApiKey;
+        if (!string.IsNullOrEmpty(apiKey))
+        {
+            MetadataService.Configure(apiKey);
+        }
+        IsConfigured = MetadataService.IsConfigured();
+    }
+
+    private async Task OnKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Search();
+        }
+    }
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(SearchQuery)) return;
+
+        IsSearching = true;
+        StatusMessage = "";
+        SearchResults.Clear();
+        SelectedSeries = null;
+        StateHasChanged();
+
+        try
+        {
+            SearchResults = await MetadataService.SearchSeriesAsync(SearchQuery);
+
+            if (!SearchResults.Any())
+            {
+                StatusMessage = "No se encontraron resultados";
+                IsError = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            IsError = true;
+        }
+        finally
+        {
+            IsSearching = false;
+        }
+    }
+
+    private void SelectSeries(SeriesSearchResult series)
+    {
+        SelectedSeries = series;
+        StatusMessage = $"Serie seleccionada: {series.Name}";
+        IsError = false;
+    }
+
+    private async Task FetchEpisodes()
+    {
+        if (SelectedSeries == null) return;
+
+        IsFetching = true;
+        StatusMessage = "Descargando títulos de episodios...";
+        StateHasChanged();
+
+        try
+        {
+            int total = Files.Count;
+            int current = 0;
+            int found = 0;
+
+            foreach (var file in Files)
+            {
+                current++;
+                StatusMessage = $"Procesando [{current}/{total}]: {file.OriginalName}";
+                StateHasChanged();
+
+                bool foundEpisode = false;
+
+                // Method 1: Try to extract season/episode from filename
+                if (TryExtractSeasonEpisode(file.OriginalName, out int season, out int episode))
+                {
+                    var title = await MetadataService.GetEpisodeTitleAsync(SelectedSeries.Id, season, episode);
+                    if (!string.IsNullOrEmpty(title))
+                    {
+                        file.EpisodeTitle = title;
+                        file.Season = season;
+                        file.Episode = episode;
+                        file.SeriesTitle = SelectedSeries.Name ?? "";
+                        file.Status = FileStatus.Analyzed;
+                        found++;
+                        foundEpisode = true;
+                    }
+                }
+
+                // Method 2: If no season/episode found, try to find by existing episode title
+                if (!foundEpisode && !string.IsNullOrEmpty(file.EpisodeTitle))
+                {
+                    var result = await MetadataService.FindEpisodeByTitleAsync(SelectedSeries.Id, file.EpisodeTitle);
+                    if (result.HasValue)
+                    {
+                        file.Season = result.Value.season;
+                        file.Episode = result.Value.episode;
+                        file.EpisodeTitle = result.Value.title;
+                        file.SeriesTitle = SelectedSeries.Name ?? "";
+                        file.Status = FileStatus.Analyzed;
+                        found++;
+                        foundEpisode = true;
+                    }
+                }
+
+                // Method 3: Try extracting title from filename and search by that
+                if (!foundEpisode)
+                {
+                    string possibleTitle = ExtractPossibleTitle(file.OriginalName);
+                    if (!string.IsNullOrEmpty(possibleTitle))
+                    {
+                        var result = await MetadataService.FindEpisodeByTitleAsync(SelectedSeries.Id, possibleTitle);
+                        if (result.HasValue)
+                        {
+                            file.Season = result.Value.season;
+                            file.Episode = result.Value.episode;
+                            file.EpisodeTitle = result.Value.title;
+                            file.SeriesTitle = SelectedSeries.Name ?? "";
+                            file.Status = FileStatus.Analyzed;
+                            found++;
+                        }
+                    }
+                }
+            }
+
+            StatusMessage = $"Completado: {found} títulos encontrados de {total} archivos";
+            IsError = false;
+
+            // Notificar el nombre de la serie
+            if (SelectedSeries.Name != null)
+            {
+                await OnSeriesSelected.InvokeAsync(SelectedSeries.Name);
+            }
+
+            await Task.Delay(1500);
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            IsError = true;
+        }
+        finally
+        {
+            IsFetching = false;
+        }
+    }
+
+    private bool TryExtractSeasonEpisode(string filename, out int season, out int episode)
+    {
+        season = 0;
+        episode = 0;
+
+        // Pattern 1: S01E01, S1E1
+        var match = System.Text.RegularExpressions.Regex.Match(
+        filename,
+        @"[Ss](\d{1,2})[.\s_-]?[Ee](\d{1,3})",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            season = int.Parse(match.Groups[1].Value);
+            episode = int.Parse(match.Groups[2].Value);
+            return true;
+        }
+
+        // Pattern 2: 1x01, 01x01
+        match = System.Text.RegularExpressions.Regex.Match(
+        filename,
+        @"(\d{1,2})x(\d{2,3})",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            season = int.Parse(match.Groups[1].Value);
+            episode = int.Parse(match.Groups[2].Value);
+            return true;
+        }
+
+        // Pattern 3: Season 1 Episode 1
+        match = System.Text.RegularExpressions.Regex.Match(
+        filename,
+        @"Season[.\s_-]?(\d{1,2})[.\s_-]+Episode[.\s_-]?(\d{1,3})",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            season = int.Parse(match.Groups[1].Value);
+            episode = int.Parse(match.Groups[2].Value);
+            return true;
+        }
+
+        // Pattern 4: Temporada X Capitulo Y (Spanish)
+        match = System.Text.RegularExpressions.Regex.Match(
+        filename,
+        @"(?:Temp|Temporada)[.\s_-]?(\d{1,2})[.\s_-]+(?:Cap|Capitulo)[.\s_-]?(\d{1,3})",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            season = int.Parse(match.Groups[1].Value);
+            episode = int.Parse(match.Groups[2].Value);
+            return true;
+        }
+
+        // Pattern 5: Absolute episode number (e.g., "Series - 150" for anime)
+        // Only use as fallback, assume season 1
+        match = System.Text.RegularExpressions.Regex.Match(
+        filename,
+        @"[.\s_-]+(\d{2,4})[.\s_-]",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            season = 1;
+            episode = int.Parse(match.Groups[1].Value);
+            return true;
+        }
+
+        return false;
+    }
+
+    private string ExtractPossibleTitle(string filename)
+    {
+        // Remove extension
+        filename = System.Text.RegularExpressions.Regex.Replace(
+            filename, @"\.(mkv|mp4|avi|wmv)$", "", 
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        
+        // Try to find title after common patterns
+        // Pattern: "Series S01E01 TITLE quality.ext" or "Series 1x01 TITLE quality.ext"
+        var match = System.Text.RegularExpressions.Regex.Match(
+            filename,
+            @"(?:[Ss]\d+[Ee]\d+|\d+x\d+)[.\s_-]+([^.\d][^.]+?)(?:\s+\d+p|\s+[Ww]eb|\s+[Hh]d|\s+[Bb]lu|$)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        
+        if (match.Success && match.Groups[1].Value.Length > 2)
+        {
+            return match.Groups[1].Value.Replace("_", " ").Replace(".", " ").Trim();
+        }
+        
+        // Try extracting from format "Series Title Episode.ext" (no season/episode numbers)
+        // Clean underscores and dots
+        string cleaned = filename.Replace("_", " ").Replace(".", " ");
+        
+        // Remove common quality tags
+        cleaned = System.Text.RegularExpressions.Regex.Replace(
+            cleaned, 
+            @"\b(1080p|720p|480p|WEB-DL|WEBDL|WEBRip|BluRay|HDTV|x264|x265|HEVC|AAC|AC3|DUAL|MULTI|Spa|Eng|Sub)\b", 
+            "", 
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        
+        // Get last meaningful words (likely the episode title)
+        var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length >= 2)
+        {
+            // Try last 2-4 words as potential title
+            int startIndex = Math.Max(0, words.Length - 4);
+            return string.Join(" ", words.Skip(startIndex).Take(4)).Trim();
+        }
+        
+        return "";
+    }
+
+    private async Task Cancel()
+    {
+        await OnClose.InvokeAsync();
+    }
+}
