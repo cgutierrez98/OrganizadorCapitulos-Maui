@@ -68,6 +68,9 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         private bool _showingSaveAll;
 
         [ObservableProperty]
+        private bool _showingOperationLog;
+
+        [ObservableProperty]
         private bool _isDragging;
 
         public bool IsNotProcessing => !IsProcessing;
@@ -331,13 +334,18 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             StatusMessage = "Deshaciendo...";
 
             var result = await _undoRedoService.UndoAsync();
-            StatusMessage = result.message;
 
             if (result.success && result.count > 0)
             {
-                // Simple refresh for now - could be optimized
-                // Ideally we'd map changes back to FileViewModels
+                ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
+
+                foreach (var operation in result.appliedOperations)
+                {
+                    _logService.LogUndo(operation.OldPath, operation.NewPath);
+                }
             }
+
+            StatusMessage = result.message;
 
             IsProcessing = false;
         }
@@ -358,6 +366,14 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 {
                     var result = await _undoRedoService.UndoAsync();
                     if (!result.success) break;
+
+                    ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
+
+                    foreach (var operation in result.appliedOperations)
+                    {
+                        _logService.LogUndo(operation.OldPath, operation.NewPath);
+                    }
+
                     totalUndone += result.count;
                 }
                 catch
@@ -381,6 +397,17 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             StatusMessage = "Rehaciendo...";
 
             var result = await _undoRedoService.RedoAsync();
+
+            if (result.success && result.count > 0)
+            {
+                ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: true);
+
+                foreach (var operation in result.appliedOperations)
+                {
+                    _logService.LogRedo(operation.OldPath, operation.NewPath);
+                }
+            }
+
             StatusMessage = result.message;
             IsProcessing = false;
         }
@@ -450,6 +477,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [RelayCommand] private void CloseTmdbSearch() => ShowingTmdbSearch = false;
         [RelayCommand] private void OpenSaveAll() => ShowingSaveAll = true;
         [RelayCommand] private void CloseSaveAll() => ShowingSaveAll = false;
+        [RelayCommand] private void OpenOperationLog() => ShowingOperationLog = true;
+        [RelayCommand] private void CloseOperationLog() => ShowingOperationLog = false;
 
         [RelayCommand]
         private async Task MoveFilesAsync(List<string> folders)
@@ -464,18 +493,32 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
             try
             {
+                var sourcePaths = Files.Select(file => file.FullPath).ToList();
+                var movedFiles = await _fileOrganizerService.MoveFilesAsync(sourcePaths, destinationFolder);
+                var movedBySource = movedFiles.ToDictionary(move => move.oldPath, move => move.newPath);
+
                 foreach (var file in Files)
                 {
                     ProgressCurrent++;
                     UpdateProgress($"Moviendo: {file.OriginalName}", ProgressCurrent, ProgressTotal);
 
-                    var newPath = Path.Combine(destinationFolder, file.OriginalName);
-
-                    // Run on background to not block UI
-                    await Task.Run(() => File.Move(file.FullPath, newPath, true));
+                    if (!movedBySource.TryGetValue(file.FullPath, out var newPath))
+                    {
+                        continue;
+                    }
 
                     file.FullPath = newPath;
+                    file.OriginalName = Path.GetFileName(newPath);
                     file.Status = FileStatus.Done;
+                }
+
+                _undoRedoService.RecordOperations(movedFiles
+                    .Select(move => new RenameOperation { OldPath = move.oldPath, NewPath = move.newPath })
+                    .ToList());
+
+                foreach (var movedFile in movedFiles)
+                {
+                    _logService.LogMove(Path.GetFileName(movedFile.oldPath), destinationFolder);
                 }
 
                 StatusMessage = $"Todos los archivos movidos a: {destinationFolder}";
@@ -504,6 +547,37 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             ProgressMessage = message;
             ProgressCurrent = current;
             ProgressTotal = total;
+        }
+
+        private void ApplyFilePathChanges(IEnumerable<RenameOperation> operations, bool isCompletedOperation)
+        {
+            foreach (var operation in operations)
+            {
+                var file = Files.FirstOrDefault(item => string.Equals(item.FullPath, operation.OldPath, StringComparison.OrdinalIgnoreCase));
+                if (file == null)
+                {
+                    continue;
+                }
+
+                file.FullPath = operation.NewPath;
+                file.OriginalName = Path.GetFileName(operation.NewPath);
+
+                if (isCompletedOperation)
+                {
+                    file.Status = FileStatus.Done;
+                    file.NewName = string.Empty;
+                    continue;
+                }
+
+                file.Status = string.IsNullOrWhiteSpace(file.SeriesTitle)
+                    ? FileStatus.Pending
+                    : FileStatus.Analyzed;
+
+                UpdatePreviewForFile(file);
+            }
+
+            OnPropertyChanged(nameof(FileCounts));
+            OnPropertyChanged(nameof(FilteredFiles));
         }
     }
 }

@@ -25,6 +25,44 @@
     </div>
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <script>
+        (() => {
+            const isTypingContext = (element) => {
+                if (!element) return false;
+                const tagName = element.tagName;
+                return element.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+            };
+
+            const normalizeShortcut = (event) => {
+                const parts = [];
+
+                if (event.ctrlKey || event.metaKey) parts.push('ctrl');
+                if (event.shiftKey) parts.push('shift');
+                if (event.altKey) parts.push('alt');
+
+                let key = (event.key || '').toLowerCase();
+                if (!key) return '';
+
+                if (key === ',') key = 'comma';
+                if (key === ' ') key = 'space';
+
+                return [...parts, key].join('+');
+            };
+
+            document.addEventListener('keydown', (event) => {
+                if (isTypingContext(document.activeElement)) return;
+
+                const shortcut = normalizeShortcut(event);
+                if (!shortcut) return;
+
+                const target = document.querySelector(`[data-shortcut="${shortcut}"]`);
+                if (!target || target.disabled) return;
+
+                event.preventDefault();
+                target.click();
+            });
+        })();
+    </script>
 </body>
 
 </html>

@@ -7,76 +7,181 @@
 @inject HomeViewModel ViewModel
 @implements IDisposable
 
-<div class="d-flex flex-column vh-100" @ondragover="HandleDragOver" @ondragover:preventDefault="true"
+<div class="home-shell" @ondragover="HandleDragOver" @ondragover:preventDefault="true"
     @ondrop="HandleDrop" @ondrop:preventDefault="true" @ondragleave="HandleDragLeave">
 
     <!-- Drag Overlay -->
     @if (ViewModel.IsDragging)
     {
         <div class="drop-zone-overlay">
-            <div class="drop-zone-overlay-text">📂 Suelta aquí para cargar archivos</div>
+            <div class="drop-zone-overlay-text">
+                <span class="overlay-title">Soltar carpetas</span>
+                <span class="overlay-subtitle">Cárgalas aquí para empezar a organizar capítulos.</span>
+            </div>
         </div>
     }
 
-    <!-- Toolbar -->
-    <nav class="navbar navbar-expand navbar-themed px-3">
-        <div class="d-flex gap-2 flex-wrap align-items-center flex-grow-1">
-            <button class="btn btn-primary btn-sm" @onclick="() => ViewModel.ShowFolderBrowserCommand.Execute(null)">
-                📁 Cargar
-            </button>
-            <div class="vr mx-1"></div>
-            <button class="btn btn-info btn-sm text-white" @onclick="() => ViewModel.AnalyzeWithAICommand.Execute(null)"
-                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)">
-                🤖 IA
-            </button>
-            <button class="btn btn-secondary btn-sm" @onclick="() => ViewModel.OpenTmdbSearchCommand.Execute(null)"
-                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)">
-                🔍 TMDB
-            </button>
-            <div class="vr mx-1"></div>
-            <button class="btn btn-warning btn-sm" @onclick="() => ViewModel.RenameSelectedCommand.Execute(null)"
-                disabled="@(ViewModel.SelectedFile == null || ViewModel.IsProcessing)">
-                ✏️ Renombrar
-            </button>
-            <button class="btn btn-success btn-sm" @onclick="() => ViewModel.RenameAllCommand.Execute(null)"
-                disabled="@(!ViewModel.Files.Any(f => f.Status == FileStatus.Analyzed) || ViewModel.IsProcessing)">
-                ✅ Todo
-            </button>
-            <button class="btn btn-outline-primary btn-sm" @onclick="() => ViewModel.OpenSaveAllCommand.Execute(null)"
-                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)">
-                💾 Mover
-            </button>
-            <div class="vr mx-1"></div>
-            <button class="btn btn-outline-secondary btn-sm" @onclick="() => ViewModel.UndoCommand.Execute(null)"
-                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer (Ctrl+Z)">
-                ↩️ @(ViewModel.UndoRedo.UndoCount > 0 ? $"({ViewModel.UndoRedo.UndoCount})" : "")
-            </button>
-            <button class="btn btn-outline-danger btn-sm" @onclick="() => ViewModel.UndoAllCommand.Execute(null)"
-                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer todos los cambios">
-                🧹 Deshacer todo
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" @onclick="() => ViewModel.RedoCommand.Execute(null)"
-                disabled="@(!ViewModel.UndoRedo.CanRedo || ViewModel.IsProcessing)" title="Rehacer (Ctrl+Y)">
-                ↪️ @(ViewModel.UndoRedo.RedoCount > 0 ? $"({ViewModel.UndoRedo.RedoCount})" : "")
-            </button>
+    <header class="workspace-header surface-panel surface-panel-hero">
+        <div class="workspace-copy">
+            <span class="workspace-kicker">Organizador inteligente</span>
+            <h1 class="workspace-title">Organizador de capítulos</h1>
+            <p class="workspace-subtitle">
+                Carga carpetas, detecta metadatos, corrige episodios y prepara renombrado o movimiento con una vista
+                clara del progreso.
+            </p>
+        </div>
 
-            <div class="ms-auto d-flex align-items-center gap-2">
-                <button class="theme-toggle" @onclick="async () => { await ViewModel.ThemeService.ToggleThemeAsync(); await InvokeAsync(StateHasChanged); }"
-                    title="Cambiar tema">
-                    @(ViewModel.ThemeService.IsDarkTheme ? "☀️" : "🌙")
-                </button>
-                <button class="btn btn-outline-secondary btn-sm"
-                    @onclick="() => ViewModel.OpenSettingsCommand.Execute(null)">
-                    ⚙️
-                </button>
+        <div class="workspace-stats" aria-label="Resumen del proyecto actual">
+            <div class="stat-card">
+                <span class="stat-label">Archivos</span>
+                <strong class="stat-value">@ViewModel.Files.Count</strong>
+                <span class="stat-caption">detectados</span>
+            </div>
+            <div class="stat-card stat-card-accent">
+                <span class="stat-label">Listos</span>
+                <strong class="stat-value">@ViewModel.Files.Count(f => f.Status == FileStatus.Analyzed)</strong>
+                <span class="stat-caption">para renombrar</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Pendientes</span>
+                <strong class="stat-value">@ViewModel.Files.Count(f => f.Status == FileStatus.Pending)</strong>
+                <span class="stat-caption">sin analizar</span>
             </div>
         </div>
-    </nav>
+    </header>
+
+    <section class="action-bar surface-panel" aria-label="Acciones principales">
+        <div class="action-group action-group-primary">
+            <button type="button" class="btn btn-primary action-button action-button-primary"
+                @onclick="() => ViewModel.ShowFolderBrowserCommand.Execute(null)" aria-label="Cargar carpetas"
+                data-shortcut="ctrl+o" title="Cargar carpetas (Ctrl+O)">
+                <span class="action-icon" aria-hidden="true">ADD</span>
+                <span class="action-copy">
+                    <strong>Cargar carpetas</strong>
+                    <small>Importa archivos de video desde una o varias ubicaciones.</small>
+                </span>
+            </button>
+
+            <button type="button" class="btn btn-info action-button"
+                @onclick="() => ViewModel.AnalyzeWithAICommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)" aria-label="Analizar archivos con IA"
+                data-shortcut="ctrl+i" title="Analizar con IA (Ctrl+I)">
+                <span class="action-icon" aria-hidden="true">AI</span>
+                <span class="action-copy">
+                    <strong>Analizar con IA</strong>
+                    <small>Detecta serie, temporada y episodio a partir del nombre del archivo.</small>
+                </span>
+            </button>
+
+            <button type="button" class="btn btn-secondary action-button"
+                @onclick="() => ViewModel.OpenTmdbSearchCommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)" aria-label="Buscar metadatos en TMDB"
+                data-shortcut="ctrl+t" title="Buscar en TMDB (Ctrl+T)">
+                <span class="action-icon" aria-hidden="true">DB</span>
+                <span class="action-copy">
+                    <strong>Buscar en TMDB</strong>
+                    <small>Completa títulos y metadatos consultando la base externa.</small>
+                </span>
+            </button>
+        </div>
+
+        <div class="action-group action-group-secondary">
+            <button type="button" class="btn btn-warning action-chip"
+                @onclick="() => ViewModel.RenameSelectedCommand.Execute(null)"
+                disabled="@(ViewModel.SelectedFile == null || ViewModel.IsProcessing)" aria-label="Renombrar archivo seleccionado"
+                data-shortcut="f2" title="Renombrar seleccionado (F2)">
+                Renombrar seleccionado
+            </button>
+            <button type="button" class="btn btn-success action-chip"
+                @onclick="() => ViewModel.RenameAllCommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any(f => f.Status == FileStatus.Analyzed) || ViewModel.IsProcessing)" aria-label="Renombrar todos los archivos listos"
+                data-shortcut="ctrl+enter" title="Renombrar todo (Ctrl+Enter)">
+                Renombrar todo
+            </button>
+            <button type="button" class="btn btn-outline-primary action-chip"
+                @onclick="() => ViewModel.OpenSaveAllCommand.Execute(null)"
+                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)" aria-label="Mover archivos a otra carpeta"
+                data-shortcut="ctrl+m" title="Mover archivos (Ctrl+M)">
+                Mover archivos
+            </button>
+        </div>
+
+        <div class="action-group action-group-utility">
+            <button type="button" class="btn btn-outline-secondary action-chip"
+                @onclick="() => ViewModel.UndoCommand.Execute(null)"
+                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer (Ctrl+Z)"
+                aria-label="Deshacer último cambio" data-shortcut="ctrl+z">
+                Deshacer @(ViewModel.UndoRedo.UndoCount > 0 ? $"({ViewModel.UndoRedo.UndoCount})" : "")
+            </button>
+            <button type="button" class="btn btn-outline-secondary action-chip"
+                @onclick="() => ViewModel.RedoCommand.Execute(null)"
+                disabled="@(!ViewModel.UndoRedo.CanRedo || ViewModel.IsProcessing)" title="Rehacer (Ctrl+Y)"
+                aria-label="Rehacer último cambio revertido" data-shortcut="ctrl+y">
+                Rehacer @(ViewModel.UndoRedo.RedoCount > 0 ? $"({ViewModel.UndoRedo.RedoCount})" : "")
+            </button>
+            <button type="button" class="btn btn-outline-danger action-chip"
+                @onclick="() => ViewModel.UndoAllCommand.Execute(null)"
+                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer todos los cambios"
+                aria-label="Deshacer todos los cambios realizados">
+                Deshacer todo
+            </button>
+
+            <div class="toolbar-divider" aria-hidden="true"></div>
+
+            <button type="button" class="btn btn-outline-secondary action-chip"
+                @onclick="() => ViewModel.OpenOperationLogCommand.Execute(null)" aria-label="Abrir historial de operaciones"
+                data-shortcut="ctrl+h" title="Historial de operaciones (Ctrl+H)">
+                Historial
+            </button>
+
+            <button type="button" class="theme-toggle"
+                @onclick="async () => { await ViewModel.ThemeService.ToggleThemeAsync(); await InvokeAsync(StateHasChanged); }"
+                title="Cambiar tema" aria-label="@(ViewModel.ThemeService.IsDarkTheme ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
+                data-shortcut="ctrl+d">
+                <span class="theme-toggle-glyph" aria-hidden="true">@(ViewModel.ThemeService.IsDarkTheme ? "Light" : "Dark")</span>
+            </button>
+            <button type="button" class="btn btn-outline-secondary action-chip"
+                @onclick="() => ViewModel.OpenSettingsCommand.Execute(null)" aria-label="Abrir configuración"
+                data-shortcut="ctrl+comma" title="Preferencias (Ctrl+,)">
+                Preferencias
+            </button>
+        </div>
+    </section>
+
+    <section class="desktop-hud surface-panel" aria-label="Ayudas de escritorio y contexto activo">
+        <div class="desktop-shortcuts">
+            <span class="desktop-hud-title">Atajos</span>
+            <div class="shortcut-list">
+                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>O</kbd><span>Cargar</span></span>
+                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>I</kbd><span>IA</span></span>
+                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>T</kbd><span>TMDB</span></span>
+                <span class="shortcut-chip"><kbd>F2</kbd><span>Renombrar</span></span>
+                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>Enter</kbd><span>Renombrar todo</span></span>
+                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>Z</kbd><span>Deshacer</span></span>
+            </div>
+        </div>
+
+        <div class="desktop-selection-summary" aria-live="polite">
+            <span class="desktop-hud-title">Selección</span>
+            @if (ViewModel.SelectedFile is null)
+            {
+                <p class="desktop-selection-empty">Selecciona un archivo para ver su contexto rápido y operar con F2.</p>
+            }
+            else
+            {
+                <div class="selection-card-mini">
+                    <strong class="selection-card-title">@ViewModel.SelectedFile.OriginalName</strong>
+                    <span class="selection-card-meta">Estado: @GetStatusLabel(ViewModel.SelectedFile.Status)</span>
+                    <span class="selection-card-meta">Preview: @(string.IsNullOrWhiteSpace(ViewModel.SelectedFile.NewName) ? "Aún no disponible" : ViewModel.SelectedFile.NewName)</span>
+                </div>
+            }
+        </div>
+    </section>
 
     <!-- Progress Bar (visible during processing) -->
     @if (ViewModel.IsProcessing)
     {
-        <div class="px-3 py-2" style="background-color: var(--bg-secondary);">
+        <section class="progress-card surface-panel" aria-live="polite">
             <div class="d-flex justify-content-between small mb-1">
                 <span>@ViewModel.ProgressMessage</span>
                 <span>@ViewModel.ProgressCurrent / @ViewModel.ProgressTotal</span>
@@ -84,41 +189,44 @@
             <div class="progress-container">
                 <div class="progress-bar-custom" style="width: @ViewModel.ProgressPercent%"></div>
             </div>
-        </div>
+        </section>
     }
 
-    <!-- Main Content Area -->
-    <div class="flex-grow-1 d-flex overflow-hidden">
-        <!-- Left Panel: File List -->
-        <div class="flex-grow-1 d-flex flex-column border-end" style="min-width: 400px;">
-            <div class="panel-header d-flex justify-content-between">
-                <span><strong>Archivos</strong></span>
-                <span class="small">@ViewModel.FileCounts</span>
+    <div class="workspace-grid">
+        <section class="surface-panel workspace-panel workspace-panel-list" aria-labelledby="files-title">
+            <div class="panel-header panel-header-rich">
+                <div>
+                    <span class="panel-kicker">Biblioteca</span>
+                    <h2 id="files-title" class="panel-title">Archivos</h2>
+                </div>
+                <span class="panel-meta">@ViewModel.FileCounts</span>
             </div>
-            <div class="flex-grow-1 overflow-auto panel-content">
+            <div class="panel-content panel-content-fill">
                 <FileList Files="@ViewModel.Files" OnFileSelected="@((f) => ViewModel.SelectFileCommand.Execute(f))" />
             </div>
-        </div>
+        </section>
 
-        <!-- Right Panel: Details -->
-        <div class="d-flex flex-column" style="width: 320px; min-width: 280px; background-color: var(--bg-secondary);">
-            <div class="panel-header">
-                <strong>Detalles del Capítulo</strong>
+        <aside class="surface-panel workspace-panel workspace-panel-detail @(ViewModel.SelectedFile is null ? string.Empty : "detail-panel-active")"
+            aria-labelledby="details-title">
+            <div class="panel-header panel-header-rich">
+                <div>
+                    <span class="panel-kicker">Edición</span>
+                    <h2 id="details-title" class="panel-title">Detalles del capítulo</h2>
+                </div>
+                <span class="panel-meta">@(ViewModel.SelectedFile is null ? "Sin selección" : "Archivo activo")</span>
             </div>
-            <div class="flex-grow-1 overflow-auto p-3">
+            <div class="panel-content panel-content-form">
                 <DetailsForm SelectedFile="@ViewModel.SelectedFile"
                     OnChange="@(() => ViewModel.UpdatePreviewForFileCommand.Execute(null))" />
-                <hr class="my-3" style="border-color: var(--border-color);" />
                 <StrategySelector SelectedMode="@ViewModel.CurrentMode"
                     OnModeChanged="@((m) => ViewModel.ChangeModeCommand.Execute(m))" />
             </div>
-        </div>
+        </aside>
     </div>
 
-    <!-- Status Bar -->
-    <div class="status-bar px-3 py-1 small d-flex justify-content-between">
+    <div class="status-bar" aria-live="polite">
         <span>@ViewModel.StatusMessage</span>
-        <span>@DateTime.Now.ToString("HH:mm")</span>
+        <span>Actualizado @DateTime.Now.ToString("HH:mm")</span>
     </div>
 </div>
 
@@ -145,6 +253,11 @@
 {
     <FolderBrowserDialog IsSingleSelectionMode="true" OnAccept="@((folders) => ViewModel.MoveFilesCommand.Execute(folders))"
         OnCancel="() => ViewModel.CloseSaveAllCommand.Execute(null)" />
+}
+
+@if (ViewModel.ShowingOperationLog)
+{
+    <OperationLogDialog OnClose="() => ViewModel.CloseOperationLogCommand.Execute(null)" />
 }
 
 @code {
@@ -174,6 +287,14 @@
     {
         await ViewModel.HandleDropAsync();
     }
+
+    private static string GetStatusLabel(FileStatus status) => status switch
+    {
+        FileStatus.Done => "Renombrado",
+        FileStatus.Analyzed => "Listo",
+        FileStatus.Error => "Con incidencia",
+        _ => "Pendiente"
+    };
 
     public void Dispose()
     {

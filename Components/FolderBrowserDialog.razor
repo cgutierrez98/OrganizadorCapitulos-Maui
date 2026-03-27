@@ -2,12 +2,17 @@
 @using System.Runtime.InteropServices
 @using OrganizadorCapitulos.Maui.Components
 
-<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+<div class="modal fade show d-block modal-backdrop-themed" tabindex="-1" role="dialog" aria-modal="true"
+    aria-labelledby="folder-browser-title">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header py-2">
-                <h5 class="modal-title">Seleccionar Carpetas</h5>
-                <button type="button" class="btn-close" @onclick="Cancel"></button>
+                <div class="modal-title-group">
+                    <span class="modal-kicker">Origen</span>
+                    <h5 class="modal-title" id="folder-browser-title">Seleccionar carpetas</h5>
+                    <p class="modal-subtitle">Explora las unidades disponibles y elige las carpetas que contienen los videos.</p>
+                </div>
+                <button type="button" class="btn-close" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
             </div>
             <div class="modal-body p-0" style="height: 400px; overflow-y: auto;">
                 <div class="list-group list-group-flush">

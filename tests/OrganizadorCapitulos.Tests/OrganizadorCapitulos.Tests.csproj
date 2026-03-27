@@ -2,11 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
-    <ImplicitUsings>disable</ImplicitUsings>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,10 +20,25 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
   </ItemGroup>
 
-  
-
   <ItemGroup>
-    <!-- Compile SharedLogic sources directly into the test assembly to avoid loading the main MAUI app and its native initializers -->
+    <Compile Include="..\..\Models\FileViewModel.cs" Link="App\Models\FileViewModel.cs" />
+    <Compile Include="..\..\ViewModels\HomeViewModel.cs" Link="App\ViewModels\HomeViewModel.cs" />
+    <Compile Include="..\..\Services\SettingsService.cs" Link="App\Services\SettingsService.cs" />
+    <Compile Include="..\..\Services\UndoRedoService.cs" Link="App\Services\UndoRedoService.cs" />
+    <Compile Include="..\..\Services\OperationLogService.cs" Link="App\Services\OperationLogService.cs" />
+    <Compile Include="..\..\Services\Interfaces\IThemeService.cs" Link="App\Services\Interfaces\IThemeService.cs" />
+    <Compile Include="..\..\SharedLogic\Application\Services\FileOrganizerService.cs" Link="SharedLogic\Application\Services\FileOrganizerService.cs" />
+    <Compile Include="..\..\SharedLogic\Application\Strategies\*.cs" Link="SharedLogic\Application\Strategies\%(Filename)%(Extension)" />
+    <Compile Include="..\..\SharedLogic\Infrastructure\Repositories\FileRepository.cs" Link="SharedLogic\Infrastructure\Repositories\FileRepository.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Entities\*.cs" Link="SharedLogic\Core\Entities\%(Filename)%(Extension)" />
+    <Compile Include="..\..\SharedLogic\Core\Enums\FileStatus.cs" Link="SharedLogic\Core\Enums\FileStatus.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Enums\RenameMode.cs" Link="SharedLogic\Core\Enums\RenameMode.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Interfaces\IRenameStrategy.cs" Link="SharedLogic\Core\Interfaces\IRenameStrategy.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Interfaces\Observers\IProgressObserver.cs" Link="SharedLogic\Core\Interfaces\Observers\IProgressObserver.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Interfaces\Repositories\IFileRepository.cs" Link="SharedLogic\Core\Interfaces\Repositories\IFileRepository.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Interfaces\Services\IAIService.cs" Link="SharedLogic\Core\Interfaces\Services\IAIService.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Interfaces\Services\IMetadataService.cs" Link="SharedLogic\Core\Interfaces\Services\IMetadataService.cs" />
+    <Compile Include="..\..\SharedLogic\Core\Exceptions\*.cs" Link="SharedLogic\Core\Exceptions\%(Filename)%(Extension)" />
   </ItemGroup>
   <!--
     NOTE: Compiling the full SharedLogic tree into the test assembly causes Windows native

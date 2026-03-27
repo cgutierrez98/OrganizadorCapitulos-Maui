@@ -2,83 +2,79 @@
 @using organizadorCapitulos.Core.Enums
 @using System.Collections.ObjectModel
 
-<!-- Filter Pills -->
-<div class="filter-pills">
-    <button class="filter-pill @(CurrentFilter == null ? "active" : "")" @onclick='() => SetFilter(null)'>
-        Todos (@Files.Count)
+<div class="file-list-shell">
+    <div class="filter-pills" role="toolbar" aria-label="Filtros de archivos">
+        <button type="button" class="filter-pill @(CurrentFilter == null ? "active" : "")" @onclick='() => SetFilter(null)'
+            aria-pressed="@(CurrentFilter == null)">
+            Todos <span class="filter-pill-count">@Files.Count</span>
+        </button>
+        <button type="button" class="filter-pill @(CurrentFilter == FileStatus.Pending ? "active" : "")"
+            @onclick='() => SetFilter(FileStatus.Pending)' aria-pressed="@(CurrentFilter == FileStatus.Pending)">
+            Pendientes <span class="filter-pill-count">@Files.Count(f => f.Status == FileStatus.Pending)</span>
+        </button>
+        <button type="button" class="filter-pill @(CurrentFilter == FileStatus.Analyzed ? "active" : "")"
+            @onclick='() => SetFilter(FileStatus.Analyzed)' aria-pressed="@(CurrentFilter == FileStatus.Analyzed)">
+            Listos <span class="filter-pill-count">@Files.Count(f => f.Status == FileStatus.Analyzed)</span>
+        </button>
+        <button type="button" class="filter-pill @(CurrentFilter == FileStatus.Done ? "active" : "")"
+            @onclick='() => SetFilter(FileStatus.Done)' aria-pressed="@(CurrentFilter == FileStatus.Done)">
+            Renombrados <span class="filter-pill-count">@Files.Count(f => f.Status == FileStatus.Done)</span>
+        </button>
+        <button type="button" class="filter-pill @(CurrentFilter == FileStatus.Error ? "active" : "")"
+            @onclick='() => SetFilter(FileStatus.Error)' aria-pressed="@(CurrentFilter == FileStatus.Error)">
+            Incidencias <span class="filter-pill-count">@Files.Count(f => f.Status == FileStatus.Error)</span>
+        </button>
+    </div>
+
+<div class="sort-toolbar" role="toolbar" aria-label="Orden de resultados">
+    <span class="sort-toolbar-label">Ordenar por</span>
+    <button type="button" class="sort-pill @(SortColumn == "Name" ? "active" : "")" @onclick='() => SortBy("Name")'
+        aria-pressed="@(SortColumn == "Name")">
+        Nombre @(SortColumn == "Name" ? (SortAscending ? "↑" : "↓") : "")
     </button>
-    <button class="filter-pill @(CurrentFilter == FileStatus.Pending ? "active" : "")"
-        @onclick='() => SetFilter(FileStatus.Pending)'>
-        Pendientes (@Files.Count(f => f.Status == FileStatus.Pending))
+    <button type="button" class="sort-pill @(SortColumn == "Preview" ? "active" : "")" @onclick='() => SortBy("Preview")'
+        aria-pressed="@(SortColumn == "Preview")">
+        Vista previa @(SortColumn == "Preview" ? (SortAscending ? "↑" : "↓") : "")
     </button>
-    <button class="filter-pill @(CurrentFilter == FileStatus.Analyzed ? "active" : "")"
-        @onclick='() => SetFilter(FileStatus.Analyzed)'>
-        Analizados (@Files.Count(f => f.Status == FileStatus.Analyzed))
-    </button>
-    <button class="filter-pill @(CurrentFilter == FileStatus.Done ? "active" : "")"
-        @onclick='() => SetFilter(FileStatus.Done)'>
-        Hechos (@Files.Count(f => f.Status == FileStatus.Done))
-    </button>
-    <button class="filter-pill @(CurrentFilter == FileStatus.Error ? "active" : "")"
-        @onclick='() => SetFilter(FileStatus.Error)'>
-        Errores (@Files.Count(f => f.Status == FileStatus.Error))
+    <button type="button" class="sort-pill @(SortColumn == "Status" ? "active" : "")" @onclick='() => SortBy("Status")'
+        aria-pressed="@(SortColumn == "Status")">
+        Estado @(SortColumn == "Status" ? (SortAscending ? "↑" : "↓") : "")
     </button>
 </div>
 
 @if (!FilteredFiles.Any())
 {
-    <div class="d-flex align-items-center justify-content-center h-100 text-muted" style="min-height: 200px;">
-        <div class="text-center">
-            <div style="font-size: 3rem;">📁</div>
-            <p>@(Files.Any() ? "No hay archivos con este filtro" : "Haz clic en \"Cargar Carpetas\" para comenzar")</p>
+    <div class="empty-state">
+        <div class="empty-state-icon" aria-hidden="true">Archivo</div>
+        <div class="empty-state-copy">
+            <h3>@(Files.Any() ? "No hay archivos para este filtro" : "Aún no has cargado carpetas")</h3>
+            <p>@(Files.Any() ? "Prueba con otro estado o cambia el orden para encontrar el archivo que buscas." : "Empieza cargando una o varias carpetas para ver los capítulos aquí.")</p>
         </div>
     </div>
 }
 else
 {
-    <table class="table table-sm table-hover table-themed mb-0">
-        <thead>
-            <tr>
-                <th @onclick='() => SortBy("Name")' style="width: 45%;">
-                    Nombre Original
-                    <span class="sort-indicator @(SortColumn == "Name" ? "active" : "")">
-                        @(SortColumn == "Name" ? (SortAscending ? "▲" : "▼") : "○")
+    <div class="file-items" role="list" aria-label="Resultados de archivos" aria-live="polite">
+        @foreach (var file in FilteredFiles)
+        {
+            <button type="button" @onclick="() => SelectFile(file)" class="file-row @(file.IsSelected ? "row-selected" : "")"
+                aria-pressed="@file.IsSelected" aria-label="Seleccionar @file.OriginalName">
+                <div class="file-row-main">
+                    <span class="file-row-label">Original</span>
+                    <strong class="file-row-name" title="@file.OriginalName">@file.OriginalName</strong>
+                    <span class="file-row-label">Vista previa</span>
+                    <span class="file-row-preview" title="@file.NewName">@(string.IsNullOrEmpty(file.NewName) ? "Sin vista previa todavía" : file.NewName)</span>
+                </div>
+                <div class="file-row-meta">
+                    <span class="badge @GetBadgeClass(file.Status)">
+                        @GetStatusText(file.Status)
                     </span>
-                </th>
-                <th @onclick='() => SortBy("Preview")' style="width: 35%;">
-                    Vista Previa
-                    <span class="sort-indicator @(SortColumn == "Preview" ? "active" : "")">
-                        @(SortColumn == "Preview" ? (SortAscending ? "▲" : "▼") : "○")
-                    </span>
-                </th>
-                <th @onclick='() => SortBy("Status")' style="width: 20%;">
-                    Estado
-                    <span class="sort-indicator @(SortColumn == "Status" ? "active" : "")">
-                        @(SortColumn == "Status" ? (SortAscending ? "▲" : "▼") : "○")
-                    </span>
-                </th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var file in FilteredFiles)
-            {
-                <tr @onclick="() => SelectFile(file)" class="@(file.IsSelected ? "row-selected" : "")" style="cursor: pointer;">
-                    <td class="text-truncate" style="max-width: 200px;" title="@file.OriginalName">
-                        @file.OriginalName
-                    </td>
-                    <td class="text-truncate" style="max-width: 150px; color: var(--accent-color);" title="@file.NewName">
-                        @(string.IsNullOrEmpty(file.NewName) ? "-" : file.NewName)
-                    </td>
-                    <td>
-                        <span class="badge @GetBadgeClass(file.Status)">
-                            @GetStatusText(file.Status)
-                        </span>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+                </div>
+            </button>
+        }
+    </div>
 }
+</div>
 
 @code {
     [Parameter]
@@ -148,9 +144,9 @@ else
 
     private string GetStatusText(FileStatus status) => status switch
     {
-        FileStatus.Done => "✓ Hecho",
-        FileStatus.Analyzed => "Analizado",
-        FileStatus.Error => "Error",
+        FileStatus.Done => "Renombrado",
+        FileStatus.Analyzed => "Listo",
+        FileStatus.Error => "Con incidencia",
         _ => "Pendiente"
     };
 }

@@ -1,6 +1,6 @@
 ﻿/*#if (SampleContent)*/
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'OpenSansRegular', 'Segoe UI', sans-serif;
 }
 
 a, .btn-link {
@@ -24,6 +24,16 @@ a, .btn-link {
 /*#endif*/
 h1:focus {
     outline: none;
+}
+
+html,
+body,
+#app {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
 }
 
 .valid.modified:not([type=checkbox]) {

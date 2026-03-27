@@ -36,18 +36,19 @@ namespace OrganizadorCapitulos.Maui.Services
             }
         }
 
-        public async Task<(bool success, string message, int count)> UndoAsync()
+        public async Task<(bool success, string message, int count, IReadOnlyList<RenameOperation> appliedOperations)> UndoAsync()
         {
             if (!CanUndo)
-                return (false, "No hay operaciones para deshacer", 0);
+            return (false, "No hay operaciones para deshacer", 0, Array.Empty<RenameOperation>());
 
             var operations = _undoStack.Pop();
 
             try
             {
-                var (success, successCount, reversedOps, error) = await Task.Run(() =>
+                var (success, successCount, appliedOps, redoOps, error) = await Task.Run(() =>
                 {
-                    var localReversed = new List<RenameOperation>();
+                    var localApplied = new List<RenameOperation>();
+                    var localRedo = new List<RenameOperation>();
                     int localSuccess = 0;
 
                     foreach (var op in operations)
@@ -67,39 +68,41 @@ namespace OrganizadorCapitulos.Maui.Services
                                     counter++;
                                 }
                                 File.Move(op.NewPath, targetPath);
-                                localReversed.Add(new RenameOperation { OldPath = op.NewPath, NewPath = targetPath });
+                                localApplied.Add(new RenameOperation { OldPath = op.NewPath, NewPath = targetPath });
+                                localRedo.Add(new RenameOperation { OldPath = targetPath, NewPath = op.NewPath });
                             }
                             else
                             {
                                 File.Move(op.NewPath, op.OldPath);
-                                localReversed.Add(new RenameOperation { OldPath = op.NewPath, NewPath = op.OldPath });
+                                localApplied.Add(new RenameOperation { OldPath = op.NewPath, NewPath = op.OldPath });
+                                localRedo.Add(new RenameOperation { OldPath = op.OldPath, NewPath = op.NewPath });
                             }
                             localSuccess++;
                         }
                     }
 
-                    return (true, localSuccess, localReversed, (string?)null);
+                    return (true, localSuccess, localApplied, localRedo, (string?)null);
                 }).ConfigureAwait(false);
 
                 if (success && successCount > 0)
                 {
-                    _redoStack.Push(reversedOps);
+                    _redoStack.Push(redoOps);
                 }
 
-                return (true, $"Deshecho: {successCount} archivo(s)", successCount);
+                return (true, $"Deshecho: {successCount} archivo(s)", successCount, appliedOps);
             }
             catch (Exception ex)
             {
                 // Put back on undo stack if failed
                 _undoStack.Push(operations);
-                return (false, $"Error al deshacer: {ex.Message}", 0);
+                return (false, $"Error al deshacer: {ex.Message}", 0, Array.Empty<RenameOperation>());
             }
         }
 
-        public async Task<(bool success, string message, int count)> RedoAsync()
+        public async Task<(bool success, string message, int count, IReadOnlyList<RenameOperation> appliedOperations)> RedoAsync()
         {
             if (!CanRedo)
-                return (false, "No hay operaciones para rehacer", 0);
+                return (false, "No hay operaciones para rehacer", 0, Array.Empty<RenameOperation>());
 
             var operations = _redoStack.Pop();
 
@@ -146,13 +149,13 @@ namespace OrganizadorCapitulos.Maui.Services
                     _undoStack.Push(redoneOps);
                 }
 
-                return (true, $"Rehecho: {successCount} archivo(s)", successCount);
+                return (true, $"Rehecho: {successCount} archivo(s)", successCount, redoneOps);
             }
             catch (Exception ex)
             {
                 // Put back on redo stack if failed
                 _redoStack.Push(operations);
-                return (false, $"Error al rehacer: {ex.Message}", 0);
+                return (false, $"Error al rehacer: {ex.Message}", 0, Array.Empty<RenameOperation>());
             }
         }
 

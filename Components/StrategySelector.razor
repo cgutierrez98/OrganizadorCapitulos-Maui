@@ -1,28 +1,33 @@
 @using organizadorCapitulos.Core.Enums
 
-<div class="mb-3">
-    <label class="form-label small fw-bold">Modo de Renombrado</label>
-
-    <div class="form-check">
-        <input class="form-check-input" type="radio" name="strategyMode" id="modeMaintain"
-            checked="@(SelectedMode == RenameMode.Maintain)" @onchange="@(() => SelectMode(RenameMode.Maintain))">
-        <label class="form-check-label small" for="modeMaintain">
-            <strong>Mantener estructura</strong>
-            <br />
-            <span class="text-muted">El número de capítulo se incrementará automáticamente</span>
-        </label>
+<section class="editor-card">
+    <div class="editor-card-header">
+        <span class="panel-kicker">Estrategia</span>
+        <h3 class="editor-card-title">Modo de renombrado</h3>
     </div>
 
-    <div class="form-check mt-2">
-        <input class="form-check-input" type="radio" name="strategyMode" id="modeChange"
-            checked="@(SelectedMode == RenameMode.Change)" @onchange="@(() => SelectMode(RenameMode.Change))">
-        <label class="form-check-label small" for="modeChange">
-            <strong>Cambiar estructura</strong>
-            <br />
-            <span class="text-muted">El número de capítulo se mantendrá igual</span>
+    <fieldset class="strategy-group">
+        <legend class="visually-hidden">Modo de renombrado</legend>
+
+        <label class="strategy-option @(SelectedMode == RenameMode.Maintain ? "active" : "")" for="modeMaintain">
+            <input class="strategy-input" type="radio" name="strategyMode" id="modeMaintain"
+                checked="@(SelectedMode == RenameMode.Maintain)" @onchange="@(() => SelectMode(RenameMode.Maintain))">
+            <span class="strategy-copy">
+                <strong>Mantener estructura</strong>
+                <small>Reutiliza la estructura actual y avanza el número de episodio automáticamente.</small>
+            </span>
         </label>
-    </div>
-</div>
+
+        <label class="strategy-option @(SelectedMode == RenameMode.Change ? "active" : "")" for="modeChange">
+            <input class="strategy-input" type="radio" name="strategyMode" id="modeChange"
+                checked="@(SelectedMode == RenameMode.Change)" @onchange="@(() => SelectMode(RenameMode.Change))">
+            <span class="strategy-copy">
+                <strong>Cambiar estructura</strong>
+                <small>Conserva el número detectado y aplica una nueva composición del nombre.</small>
+            </span>
+        </label>
+    </fieldset>
+</section>
 
 @code {
     [Parameter]

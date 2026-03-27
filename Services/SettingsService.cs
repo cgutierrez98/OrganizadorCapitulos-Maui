@@ -14,11 +14,15 @@ namespace OrganizadorCapitulos.Maui.Services
         private readonly string _settingsPath;
         private AppSettings _settings = new();
 
-        public SettingsService()
+        public SettingsService(string? settingsDirectory = null)
         {
             // Store settings in user's AppData folder
-            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var appFolder = Path.Combine(appDataPath, "OrganizadorCapitulos");
+            var appFolder = settingsDirectory;
+            if (string.IsNullOrWhiteSpace(appFolder))
+            {
+                var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                appFolder = Path.Combine(appDataPath, "OrganizadorCapitulos");
+            }
             
             if (!Directory.Exists(appFolder))
             {
@@ -26,8 +30,7 @@ namespace OrganizadorCapitulos.Maui.Services
             }
             
             _settingsPath = Path.Combine(appFolder, "settings.json");
-            // Load settings in background to avoid blocking UI during startup
-            _ = Task.Run(async () => await LoadSettingsAsync().ConfigureAwait(false));
+            LoadSettings();
         }
 
         public string TmdbApiKey
@@ -51,13 +54,13 @@ namespace OrganizadorCapitulos.Maui.Services
             }
         }
 
-        private async Task LoadSettingsAsync()
+        private void LoadSettings()
         {
             try
             {
                 if (File.Exists(_settingsPath))
                 {
-                    var json = await File.ReadAllTextAsync(_settingsPath).ConfigureAwait(false);
+                    var json = File.ReadAllText(_settingsPath);
                     _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
                 }
             }

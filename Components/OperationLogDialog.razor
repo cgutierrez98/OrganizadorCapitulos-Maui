@@ -1,12 +1,17 @@
 @using OrganizadorCapitulos.Maui.Services
 @inject OperationLogService LogService
 
-<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade show d-block modal-backdrop-themed" tabindex="-1" role="dialog" aria-modal="true"
+    aria-labelledby="operation-log-title">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2">
-                <h5 class="modal-title">📋 Historial de Operaciones</h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <div class="modal-title-group">
+                    <span class="modal-kicker">Trazabilidad</span>
+                    <h5 class="modal-title" id="operation-log-title">Historial de operaciones</h5>
+                    <p class="modal-subtitle">Consulta los últimos cambios aplicados y su resultado para revisar el flujo de trabajo.</p>
+                </div>
+                <button type="button" class="btn-close" @onclick="Close" aria-label="Cerrar diálogo"></button>
             </div>
             <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
                 @if (!LogService.Entries.Any())
@@ -65,7 +70,7 @@
                 </span>
                 <button type="button" class="btn btn-outline-danger btn-sm" @onclick="ClearLog"
                     disabled="@(!LogService.Entries.Any())">
-                    🗑️ Limpiar
+                    Limpiar
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">
                     Cerrar

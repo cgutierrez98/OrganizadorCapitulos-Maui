@@ -2,57 +2,71 @@
 
 @if (SelectedFile == null)
 {
-        <div class="text-center text-muted py-4">
-            <div style="font-size: 2rem;">📝</div>
-            <p class="small">Selecciona un archivo para ver y editar sus detalles</p>
+    <div class="empty-state empty-state-compact">
+        <div class="empty-state-icon" aria-hidden="true">Editar</div>
+        <div class="empty-state-copy">
+            <h3>Selecciona un archivo</h3>
+            <p>Cuando elijas un capítulo podrás revisar sus metadatos, el nombre sugerido y la estrategia de renombrado.</p>
         </div>
+    </div>
 }
 else
 {
-        <div class="mb-3">
-            <label class="form-label small fw-bold">Nombre de la Serie</label>
-            <input type="text" 
-                   class="form-control form-control-sm" 
-                   @bind="SelectedFile.SeriesTitle" 
-                   @bind:after="OnChanged" 
-                   placeholder="Ej: Breaking Bad" />
-        </div>
-
-        <div class="row g-2 mb-3">
-            <div class="col-6">
-                <label class="form-label small fw-bold">Temporada</label>
-                <input type="number" 
-                       class="form-control form-control-sm" 
-                       @bind="SelectedFile.Season" 
-                       @bind:after="OnChanged" 
-                       min="1" />
+    <div class="details-stack">
+        <section class="editor-card">
+            <div class="editor-card-header">
+                <span class="panel-kicker">Metadatos</span>
+                <h3 class="editor-card-title">Información del episodio</h3>
             </div>
-            <div class="col-6">
-                <label class="form-label small fw-bold">Episodio</label>
-                <input type="number" 
-                       class="form-control form-control-sm" 
-                       @bind="SelectedFile.Episode" 
-                       @bind:after="OnChanged" 
-                       min="1" />
+
+            <div class="field-group">
+                <label class="form-label field-label" for="series-title">Nombre de la serie</label>
+                <input id="series-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
+                    @bind:after="OnChanged" placeholder="Ej: Breaking Bad" />
             </div>
-        </div>
 
-        <div class="mb-3">
-            <label class="form-label small fw-bold">Título del Episodio</label>
-            <input type="text" 
-                   class="form-control form-control-sm" 
-                   @bind="SelectedFile.EpisodeTitle" 
-                   @bind:after="OnChanged" 
-                   placeholder="Ej: Pilot (opcional)" />
-        </div>
-
-    @if (!string.IsNullOrEmpty(SelectedFile.NewName))
-    {
-                <div class="alert alert-info py-2 small">
-                    <strong>Vista previa:</strong><br/>
-            @SelectedFile.NewName
+            <div class="field-grid">
+                <div class="field-group">
+                    <label class="form-label field-label" for="season-number">Temporada</label>
+                    <input id="season-number" type="number" class="form-control" @bind="SelectedFile.Season"
+                        @bind:after="OnChanged" min="1" />
                 </div>
-    }
+                <div class="field-group">
+                    <label class="form-label field-label" for="episode-number">Episodio</label>
+                    <input id="episode-number" type="number" class="form-control" @bind="SelectedFile.Episode"
+                        @bind:after="OnChanged" min="1" />
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label class="form-label field-label" for="episode-title">Título del episodio</label>
+                <input id="episode-title" type="text" class="form-control" @bind="SelectedFile.EpisodeTitle"
+                    @bind:after="OnChanged" placeholder="Ej: Pilot (opcional)" />
+            </div>
+        </section>
+
+        <section class="editor-card">
+            <div class="editor-card-header">
+                <span class="panel-kicker">Resultado</span>
+                <h3 class="editor-card-title">Vista previa del nuevo nombre</h3>
+            </div>
+
+            @if (!string.IsNullOrEmpty(SelectedFile.NewName))
+            {
+                <div class="preview-card" aria-live="polite">
+                    <span class="preview-label">Nombre generado</span>
+                    <code class="preview-value">@SelectedFile.NewName</code>
+                </div>
+            }
+            else
+            {
+                <div class="preview-card preview-card-muted">
+                    <span class="preview-label">Aún no disponible</span>
+                    <p class="mb-0">Completa los campos o ejecuta el análisis para preparar una propuesta de nombre.</p>
+                </div>
+            }
+        </section>
+    </div>
 }
 
 @code {

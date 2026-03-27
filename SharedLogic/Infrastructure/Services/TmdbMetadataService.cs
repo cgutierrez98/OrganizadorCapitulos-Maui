@@ -135,7 +135,7 @@ namespace organizadorCapitulos.Infrastructure.Services
             var info = new ChapterInfo();
             info.Season = season;
             info.Episode = episode;
-            if (doc.RootElement.TryGetProperty("name", out var name)) info.Title = name.GetString() ?? string.Empty;
+            if (doc.RootElement.TryGetProperty("name", out var name)) info.EpisodeTitle = name.GetString() ?? string.Empty;
             return info;
         }
     }
