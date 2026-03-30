@@ -39,12 +39,12 @@
             </div>
             <div class="stat-card stat-card-accent">
                 <span class="stat-label">Listos</span>
-                <strong class="stat-value">@ViewModel.Files.Count(f => f.Status == FileStatus.Analyzed)</strong>
+                <strong class="stat-value">@ViewModel.AnalyzedCount</strong>
                 <span class="stat-caption">para renombrar</span>
             </div>
             <div class="stat-card">
                 <span class="stat-label">Pendientes</span>
-                <strong class="stat-value">@ViewModel.Files.Count(f => f.Status == FileStatus.Pending)</strong>
+                <strong class="stat-value">@ViewModel.PendingCount</strong>
                 <span class="stat-caption">sin analizar</span>
             </div>
         </div>
@@ -94,7 +94,7 @@
             </button>
             <button type="button" class="btn btn-success action-chip"
                 @onclick="() => ViewModel.RenameAllCommand.Execute(null)"
-                disabled="@(!ViewModel.Files.Any(f => f.Status == FileStatus.Analyzed) || ViewModel.IsProcessing)" aria-label="Renombrar todos los archivos listos"
+                disabled="@(ViewModel.AnalyzedCount == 0 || ViewModel.IsProcessing)" aria-label="Renombrar todos los archivos listos"
                 data-shortcut="ctrl+enter" title="Renombrar todo (Ctrl+Enter)">
                 Renombrar todo
             </button>
@@ -184,7 +184,14 @@
         <section class="progress-card surface-panel" aria-live="polite">
             <div class="d-flex justify-content-between small mb-1">
                 <span>@ViewModel.ProgressMessage</span>
-                <span>@ViewModel.ProgressCurrent / @ViewModel.ProgressTotal</span>
+                <div class="d-flex align-items-center gap-2">
+                    <span>@ViewModel.ProgressCurrent / @ViewModel.ProgressTotal</span>
+                    <button type="button" class="btn btn-sm btn-outline-danger"
+                        @onclick="() => ViewModel.CancelOperationCommand.Execute(null)"
+                        aria-label="Cancelar operación en curso" title="Cancelar">
+                        Cancelar
+                    </button>
+                </div>
             </div>
             <div class="progress-container">
                 <div class="progress-bar-custom" style="width: @ViewModel.ProgressPercent%"></div>

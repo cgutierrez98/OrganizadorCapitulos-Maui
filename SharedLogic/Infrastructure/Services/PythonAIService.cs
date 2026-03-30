@@ -33,13 +33,14 @@ namespace organizadorCapitulos.Infrastructure.Services
             {
                 var script = FindScriptPath();
                 if (script == null) return false;
-                var psi = new ProcessStartInfo("python", "--version")
+                var psi = new ProcessStartInfo("python")
                 {
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                psi.ArgumentList.Add("--version");
 
                 using var p = Process.Start(psi);
                 if (p == null) return false;
@@ -56,9 +57,10 @@ namespace organizadorCapitulos.Infrastructure.Services
             }
         }
 
-        private async Task<(int? exitCode, string stdout, string stderr, bool timedOut)> RunPythonProcessAsync(string script, string args, int timeoutMs = 5000)
+        private async Task<(int? exitCode, string stdout, string stderr, bool timedOut)> RunPythonProcessAsync(
+            string script, string command, string inputArg, int timeoutMs = 5000)
         {
-            var psi = new ProcessStartInfo("python", $"\"{script}\" {args}")
+            var psi = new ProcessStartInfo("python")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -67,6 +69,10 @@ namespace organizadorCapitulos.Infrastructure.Services
                 StandardOutputEncoding = System.Text.Encoding.UTF8,
                 StandardErrorEncoding = System.Text.Encoding.UTF8
             };
+            psi.ArgumentList.Add(script);
+            psi.ArgumentList.Add(command);
+            psi.ArgumentList.Add("--input");
+            psi.ArgumentList.Add(inputArg);
 
             try
             {
@@ -98,8 +104,7 @@ namespace organizadorCapitulos.Infrastructure.Services
         {
             var script = FindScriptPath();
             if (script == null) return null;
-            var args = $"normalize --input \"{filePath}\"";
-            var (exitCode, stdout, stderr, timedOut) = await RunPythonProcessAsync(script, args, 5000).ConfigureAwait(false);
+            var (exitCode, stdout, _, timedOut) = await RunPythonProcessAsync(script, "normalize", filePath, 5000).ConfigureAwait(false);
             if (timedOut) return null;
             if (exitCode == null || exitCode != 0) return null;
             if (string.IsNullOrWhiteSpace(stdout)) return null;
@@ -124,8 +129,7 @@ namespace organizadorCapitulos.Infrastructure.Services
         {
             var script = FindScriptPath();
             if (script == null) return null;
-            var args = $"analyze --input \"{filename}\"";
-            var (exitCode, stdout, stderr, timedOut) = await RunPythonProcessAsync(script, args, 8000).ConfigureAwait(false);
+            var (exitCode, stdout, _, timedOut) = await RunPythonProcessAsync(script, "analyze", filename, 8000).ConfigureAwait(false);
             if (timedOut) return null;
             if (exitCode == null || exitCode != 0) return null;
             if (string.IsNullOrWhiteSpace(stdout)) return null;

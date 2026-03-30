@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OrganizadorCapitulos.Maui.Services
@@ -16,10 +17,20 @@ namespace OrganizadorCapitulos.Maui.Services
     public class OperationLogService
     {
         private readonly List<LogEntry> _entries = new();
+        private readonly object _entriesLock = new();
+        private readonly SemaphoreSlim _saveLock = new(1, 1);
         private readonly string _logPath;
         private const int MaxEntries = 500;
+        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
-        public IReadOnlyList<LogEntry> Entries => _entries.AsReadOnly();
+        public IReadOnlyList<LogEntry> Entries
+        {
+            get
+            {
+                lock (_entriesLock)
+                    return _entries.ToList().AsReadOnly();
+            }
+        }
 
         public OperationLogService()
         {
@@ -88,12 +99,13 @@ namespace OrganizadorCapitulos.Maui.Services
 
         private void AddEntry(LogEntry entry)
         {
-            _entries.Insert(0, entry);
-
-            // Keep only the last MaxEntries
-            while (_entries.Count > MaxEntries)
+            lock (_entriesLock)
             {
-                _entries.RemoveAt(_entries.Count - 1);
+                _entries.Insert(0, entry);
+
+                // Keep only the last MaxEntries
+                if (_entries.Count > MaxEntries)
+                    _entries.RemoveRange(MaxEntries, _entries.Count - MaxEntries);
             }
 
             _ = SaveLogAsync();
@@ -101,7 +113,8 @@ namespace OrganizadorCapitulos.Maui.Services
 
         public void Clear()
         {
-            _entries.Clear();
+            lock (_entriesLock)
+                _entries.Clear();
             _ = SaveLogAsync();
         }
 
@@ -112,10 +125,11 @@ namespace OrganizadorCapitulos.Maui.Services
                 if (File.Exists(_logPath))
                 {
                     var json = await File.ReadAllTextAsync(_logPath).ConfigureAwait(false);
-                    var entries = JsonSerializer.Deserialize<List<LogEntry>>(json);
+                    var entries = JsonSerializer.Deserialize<List<LogEntry>>(json, _jsonOptions);
                     if (entries != null)
                     {
-                        _entries.AddRange(entries);
+                        lock (_entriesLock)
+                            _entries.AddRange(entries);
                     }
                 }
             }
@@ -127,17 +141,23 @@ namespace OrganizadorCapitulos.Maui.Services
 
         private async Task SaveLogAsync()
         {
+            await _saveLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                var json = JsonSerializer.Serialize(_entries, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                List<LogEntry> snapshot;
+                lock (_entriesLock)
+                    snapshot = _entries.ToList();
+
+                var json = JsonSerializer.Serialize(snapshot, _jsonOptions);
                 await File.WriteAllTextAsync(_logPath, json).ConfigureAwait(false);
             }
             catch
             {
                 // Ignore save errors
+            }
+            finally
+            {
+                _saveLock.Release();
             }
         }
     }

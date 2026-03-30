@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.Threading;
 using organizadorCapitulos.Application.Services;
 using organizadorCapitulos.Application.Strategies;
 using organizadorCapitulos.Core.Entities;
@@ -27,10 +28,14 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         private string? _maintainSeriesTitle;
         private int _maintainSeason = 1;
         private int _maintainNextEpisode = 1;
+        private CancellationTokenSource? _operationCts;
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(FilteredFiles))]
         [NotifyPropertyChangedFor(nameof(FileCounts))]
+        [NotifyPropertyChangedFor(nameof(AnalyzedCount))]
+        [NotifyPropertyChangedFor(nameof(PendingCount))]
+        [NotifyPropertyChangedFor(nameof(ErrorCount))]
         private ObservableCollection<FileViewModel> _files = new();
 
         [ObservableProperty]
@@ -84,7 +89,10 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             ? Files.Where(f => f.Status == CurrentFilter.Value)
             : Files;
 
-        public string FileCounts => $"{Files.Count} total | {Files.Count(f => f.Status == FileStatus.Analyzed)} listos";
+        public string FileCounts => $"{Files.Count} total | {AnalyzedCount} listos";
+        public int AnalyzedCount => Files.Count(f => f.Status == FileStatus.Analyzed);
+        public int PendingCount => Files.Count(f => f.Status == FileStatus.Pending);
+        public int ErrorCount => Files.Count(f => f.Status == FileStatus.Error);
 
         public int ProgressPercent => ProgressTotal > 0 ? (int)((ProgressCurrent * 100.0) / ProgressTotal) : 0;
 
@@ -122,6 +130,12 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         public async Task InitializeAsync()
         {
             await _themeService.InitializeAsync();
+        }
+
+        [RelayCommand]
+        public void CancelOperation()
+        {
+            _operationCts?.Cancel();
         }
 
         public void SetDragging(bool dragging)
@@ -192,42 +206,65 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 return;
             }
 
+            _operationCts = new CancellationTokenSource();
+            var ct = _operationCts.Token;
+
             IsProcessing = true;
             ProgressTotal = Files.Count;
             ProgressCurrent = 0;
 
-            foreach (var file in Files)
+            try
             {
-                ProgressCurrent++;
-                UpdateProgress($"Analizando: {file.OriginalName}", ProgressCurrent, ProgressTotal);
-
-                try
+                foreach (var file in Files)
                 {
-                    var result = await _aiService.AnalyzeFilenameAsync(file.OriginalName);
-                    if (result != null)
+                    ct.ThrowIfCancellationRequested();
+
+                    ProgressCurrent++;
+                    UpdateProgress($"Analizando: {file.OriginalName}", ProgressCurrent, ProgressTotal);
+
+                    try
                     {
-                        file.SeriesTitle = result.Title ?? "";
-                        file.Season = result.Season;
-                        file.Episode = result.Chapter;
-                        file.EpisodeTitle = result.EpisodeTitle ?? "";
-                        file.Status = FileStatus.Analyzed;
-                        UpdatePreviewForFile(file);
+                        var result = await _aiService.AnalyzeFilenameAsync(file.OriginalName);
+                        if (result != null)
+                        {
+                            file.SeriesTitle = result.Title ?? "";
+                            file.Season = result.Season;
+                            file.Episode = result.Chapter;
+                            file.EpisodeTitle = result.EpisodeTitle ?? "";
+                            file.Status = FileStatus.Analyzed;
+                            UpdatePreviewForFile(file);
+                        }
+                        else
+                        {
+                            file.Status = FileStatus.Error;
+                        }
                     }
-                    else
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch
                     {
                         file.Status = FileStatus.Error;
                     }
                 }
-                catch
-                {
-                    file.Status = FileStatus.Error;
-                }
-            }
 
-            IsProcessing = false;
-            StatusMessage = $"Análisis completado: {Files.Count(f => f.Status == FileStatus.Analyzed)} archivos analizados";
-            OnPropertyChanged(nameof(FileCounts));
-            OnPropertyChanged(nameof(FilteredFiles));
+                StatusMessage = $"Análisis completado: {Files.Count(f => f.Status == FileStatus.Analyzed)} archivos analizados";
+                OnPropertyChanged(nameof(FileCounts));
+                OnPropertyChanged(nameof(FilteredFiles));
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "Análisis cancelado";
+                OnPropertyChanged(nameof(FileCounts));
+                OnPropertyChanged(nameof(FilteredFiles));
+            }
+            finally
+            {
+                _operationCts.Dispose();
+                _operationCts = null;
+                IsProcessing = false;
+            }
         }
 
         [RelayCommand]
@@ -257,6 +294,9 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             var filesToRename = Files.Where(f => f.Status == FileStatus.Analyzed).ToList();
             if (!filesToRename.Any()) return;
 
+            _operationCts = new CancellationTokenSource();
+            var ct = _operationCts.Token;
+
             IsProcessing = true;
             ProgressTotal = filesToRename.Count;
             ProgressCurrent = 0;
@@ -269,18 +309,33 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 _maintainNextEpisode = firstFile.Episode;
             }
 
-            foreach (var file in filesToRename)
+            try
             {
-                ProgressCurrent++;
-                UpdateProgress($"Renombrando: {file.OriginalName}", ProgressCurrent, ProgressTotal);
-                await RenameFileAsync(file);
-            }
+                foreach (var file in filesToRename)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    ProgressCurrent++;
+                    UpdateProgress($"Renombrando: {file.OriginalName}", ProgressCurrent, ProgressTotal);
+                    await RenameFileAsync(file);
+                }
 
-            _maintainSeriesTitle = null;
-            IsProcessing = false;
-            StatusMessage = $"Renombrado completado: {Files.Count(f => f.Status == FileStatus.Done)} archivos";
-            OnPropertyChanged(nameof(FileCounts));
-            OnPropertyChanged(nameof(FilteredFiles));
+                StatusMessage = $"Renombrado completado: {Files.Count(f => f.Status == FileStatus.Done)} archivos";
+                OnPropertyChanged(nameof(FileCounts));
+                OnPropertyChanged(nameof(FilteredFiles));
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "Renombrado cancelado";
+                OnPropertyChanged(nameof(FileCounts));
+                OnPropertyChanged(nameof(FilteredFiles));
+            }
+            finally
+            {
+                _maintainSeriesTitle = null;
+                _operationCts?.Dispose();
+                _operationCts = null;
+                IsProcessing = false;
+            }
         }
 
         public async Task RenameFileAsync(FileViewModel file)
@@ -333,21 +388,26 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             IsProcessing = true;
             StatusMessage = "Deshaciendo...";
 
-            var result = await _undoRedoService.UndoAsync();
-
-            if (result.success && result.count > 0)
+            try
             {
-                ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
+                var result = await _undoRedoService.UndoAsync();
 
-                foreach (var operation in result.appliedOperations)
+                if (result.success && result.count > 0)
                 {
-                    _logService.LogUndo(operation.OldPath, operation.NewPath);
+                    ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
+
+                    foreach (var operation in result.appliedOperations)
+                    {
+                        _logService.LogUndo(operation.OldPath, operation.NewPath);
+                    }
                 }
+
+                StatusMessage = result.message;
             }
-
-            StatusMessage = result.message;
-
-            IsProcessing = false;
+            finally
+            {
+                IsProcessing = false;
+            }
         }
 
         [RelayCommand]
@@ -360,34 +420,40 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
             int totalUndone = 0;
 
-            while (_undoRedoService.CanUndo)
+            try
             {
-                try
+                while (_undoRedoService.CanUndo)
                 {
-                    var result = await _undoRedoService.UndoAsync();
-                    if (!result.success) break;
-
-                    ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
-
-                    foreach (var operation in result.appliedOperations)
+                    try
                     {
-                        _logService.LogUndo(operation.OldPath, operation.NewPath);
+                        var result = await _undoRedoService.UndoAsync();
+                        if (!result.success) break;
+
+                        ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
+
+                        foreach (var operation in result.appliedOperations)
+                        {
+                            _logService.LogUndo(operation.OldPath, operation.NewPath);
+                        }
+
+                        totalUndone += result.count;
                     }
+                    catch
+                    {
+                        break;
+                    }
+                }
 
-                    totalUndone += result.count;
-                }
-                catch
-                {
-                    break;
-                }
+                StatusMessage = totalUndone > 0 ? $"Deshecho: {totalUndone} archivo(s)" : "No hubo operaciones deshechas";
+
+                // Refresh file list state
+                OnPropertyChanged(nameof(FileCounts));
+                OnPropertyChanged(nameof(FilteredFiles));
             }
-
-            IsProcessing = false;
-            StatusMessage = totalUndone > 0 ? $"Deshecho: {totalUndone} archivo(s)" : "No hubo operaciones deshechas";
-
-            // Refresh file list state
-            OnPropertyChanged(nameof(FileCounts));
-            OnPropertyChanged(nameof(FilteredFiles));
+            finally
+            {
+                IsProcessing = false;
+            }
         }
 
         [RelayCommand]
@@ -396,20 +462,26 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             IsProcessing = true;
             StatusMessage = "Rehaciendo...";
 
-            var result = await _undoRedoService.RedoAsync();
-
-            if (result.success && result.count > 0)
+            try
             {
-                ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: true);
+                var result = await _undoRedoService.RedoAsync();
 
-                foreach (var operation in result.appliedOperations)
+                if (result.success && result.count > 0)
                 {
-                    _logService.LogRedo(operation.OldPath, operation.NewPath);
-                }
-            }
+                    ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: true);
 
-            StatusMessage = result.message;
-            IsProcessing = false;
+                    foreach (var operation in result.appliedOperations)
+                    {
+                        _logService.LogRedo(operation.OldPath, operation.NewPath);
+                    }
+                }
+
+                StatusMessage = result.message;
+            }
+            finally
+            {
+                IsProcessing = false;
+            }
         }
 
         [RelayCommand]

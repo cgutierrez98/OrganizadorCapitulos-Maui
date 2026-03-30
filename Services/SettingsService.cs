@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OrganizadorCapitulos.Maui.Services
@@ -12,7 +13,9 @@ namespace OrganizadorCapitulos.Maui.Services
     public class SettingsService
     {
         private readonly string _settingsPath;
+        private readonly SemaphoreSlim _saveLock = new(1, 1);
         private AppSettings _settings = new();
+        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
         public SettingsService(string? settingsDirectory = null)
         {
@@ -39,8 +42,7 @@ namespace OrganizadorCapitulos.Maui.Services
             set
             {
                 _settings.TmdbApiKey = value;
-                // Fire-and-forget save to avoid blocking caller; log internally on error
-                _ = Task.Run(async () => await SaveSettingsAsync().ConfigureAwait(false));
+                _ = SaveSettingsAsync();
             }
         }
 
@@ -50,7 +52,7 @@ namespace OrganizadorCapitulos.Maui.Services
             set
             {
                 _settings.Theme = value;
-                _ = Task.Run(async () => await SaveSettingsAsync().ConfigureAwait(false));
+                _ = SaveSettingsAsync();
             }
         }
 
@@ -61,7 +63,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 if (File.Exists(_settingsPath))
                 {
                     var json = File.ReadAllText(_settingsPath);
-                    _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                    _settings = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
                 }
             }
             catch
@@ -72,17 +74,19 @@ namespace OrganizadorCapitulos.Maui.Services
 
         private async Task SaveSettingsAsync()
         {
+            await _saveLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                var json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions 
-                { 
-                    WriteIndented = true 
-                });
+                var json = JsonSerializer.Serialize(_settings, _jsonOptions);
                 await File.WriteAllTextAsync(_settingsPath, json).ConfigureAwait(false);
             }
             catch
             {
                 // Ignore save errors
+            }
+            finally
+            {
+                _saveLock.Release();
             }
         }
     }

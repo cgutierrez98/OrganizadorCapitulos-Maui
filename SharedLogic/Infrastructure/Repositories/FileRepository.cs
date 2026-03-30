@@ -59,23 +59,6 @@ namespace organizadorCapitulos.Infrastructure.Repositories
             }
         }
 
-        public async Task CopyLargeFileAsync(string sourcePath, string destinationPath)
-        {
-            const int bufferSize = 81920;
-            try
-            {
-                using (FileStream sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, true))
-                using (FileStream destinationStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, true))
-                {
-                    await sourceStream.CopyToAsync(destinationStream, bufferSize);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                throw new FileOperationException($"Error al copiar archivo grande: {sourcePath}", sourcePath, ex);
-            }
-        }
-
         public bool FileExists(string path) => File.Exists(path);
 
         public void DeleteFile(string path)
