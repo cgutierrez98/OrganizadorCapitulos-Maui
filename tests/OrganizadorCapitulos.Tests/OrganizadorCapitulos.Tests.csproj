@@ -28,6 +28,7 @@
     <Compile Include="..\..\Services\OperationLogService.cs" Link="App\Services\OperationLogService.cs" />
     <Compile Include="..\..\Services\Interfaces\IThemeService.cs" Link="App\Services\Interfaces\IThemeService.cs" />
     <Compile Include="..\..\SharedLogic\Application\Services\FileOrganizerService.cs" Link="SharedLogic\Application\Services\FileOrganizerService.cs" />
+    <Compile Include="..\..\SharedLogic\Application\Services\EpisodePatternParser.cs" Link="SharedLogic\Application\Services\EpisodePatternParser.cs" />
     <Compile Include="..\..\SharedLogic\Application\Strategies\*.cs" Link="SharedLogic\Application\Strategies\%(Filename)%(Extension)" />
     <Compile Include="..\..\SharedLogic\Infrastructure\Repositories\FileRepository.cs" Link="SharedLogic\Infrastructure\Repositories\FileRepository.cs" />
     <Compile Include="..\..\SharedLogic\Core\Entities\*.cs" Link="SharedLogic\Core\Entities\%(Filename)%(Extension)" />
@@ -39,6 +40,8 @@
     <Compile Include="..\..\SharedLogic\Core\Interfaces\Services\IAIService.cs" Link="SharedLogic\Core\Interfaces\Services\IAIService.cs" />
     <Compile Include="..\..\SharedLogic\Core\Interfaces\Services\IMetadataService.cs" Link="SharedLogic\Core\Interfaces\Services\IMetadataService.cs" />
     <Compile Include="..\..\SharedLogic\Core\Exceptions\*.cs" Link="SharedLogic\Core\Exceptions\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Services\Interfaces\IDragDropService.cs" Link="App\Services\Interfaces\IDragDropService.cs" />
+    <Compile Include="..\..\Services\DragDropService.cs" Link="App\Services\DragDropService.cs" />
   </ItemGroup>
   <!--
     NOTE: Compiling the full SharedLogic tree into the test assembly causes Windows native

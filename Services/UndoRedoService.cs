@@ -1,3 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using organizadorCapitulos.Core.Interfaces.Repositories;
+
 namespace OrganizadorCapitulos.Maui.Services
 {
     public class RenameOperation
@@ -9,6 +16,7 @@ namespace OrganizadorCapitulos.Maui.Services
 
     public class UndoRedoService
     {
+        private readonly IFileRepository _fileRepository;
         private readonly Stack<List<RenameOperation>> _undoStack = new();
         private readonly Stack<List<RenameOperation>> _redoStack = new();
 
@@ -18,9 +26,13 @@ namespace OrganizadorCapitulos.Maui.Services
         public int UndoCount => _undoStack.Count;
         public int RedoCount => _redoStack.Count;
 
+        public UndoRedoService(IFileRepository fileRepository)
+        {
+            _fileRepository = fileRepository;
+        }
+
         public void RecordOperation(string oldPath, string newPath)
         {
-            // Record single operation as a batch of one
             RecordOperations(new List<RenameOperation>
             {
                 new RenameOperation { OldPath = oldPath, NewPath = newPath }
@@ -32,68 +44,43 @@ namespace OrganizadorCapitulos.Maui.Services
             if (operations.Count > 0)
             {
                 _undoStack.Push(operations);
-                _redoStack.Clear(); // Clear redo stack when new operation is recorded
+                _redoStack.Clear();
             }
         }
 
         public async Task<(bool success, string message, int count, IReadOnlyList<RenameOperation> appliedOperations)> UndoAsync()
         {
             if (!CanUndo)
-            return (false, "No hay operaciones para deshacer", 0, Array.Empty<RenameOperation>());
+                return (false, "No hay operaciones para deshacer", 0, Array.Empty<RenameOperation>());
 
             var operations = _undoStack.Pop();
+            var applied = new List<RenameOperation>();
+            var forRedo = new List<RenameOperation>();
 
             try
             {
-                var (success, successCount, appliedOps, redoOps, error) = await Task.Run(() =>
+                foreach (var op in operations)
                 {
-                    var localApplied = new List<RenameOperation>();
-                    var localRedo = new List<RenameOperation>();
-                    int localSuccess = 0;
+                    if (!_fileRepository.FileExists(op.NewPath)) continue;
 
-                    foreach (var op in operations)
+                    string targetPath = op.OldPath;
+                    if (_fileRepository.FileExists(op.OldPath))
                     {
-                        if (File.Exists(op.NewPath))
-                        {
-                            if (File.Exists(op.OldPath))
-                            {
-                                var dir = Path.GetDirectoryName(op.OldPath) ?? "";
-                                var name = Path.GetFileNameWithoutExtension(op.OldPath);
-                                var ext = Path.GetExtension(op.OldPath);
-                                var counter = 1;
-                                var targetPath = op.OldPath;
-                                while (File.Exists(targetPath))
-                                {
-                                    targetPath = Path.Combine(dir, $"{name}_{counter}{ext}");
-                                    counter++;
-                                }
-                                File.Move(op.NewPath, targetPath);
-                                localApplied.Add(new RenameOperation { OldPath = op.NewPath, NewPath = targetPath });
-                                localRedo.Add(new RenameOperation { OldPath = targetPath, NewPath = op.NewPath });
-                            }
-                            else
-                            {
-                                File.Move(op.NewPath, op.OldPath);
-                                localApplied.Add(new RenameOperation { OldPath = op.NewPath, NewPath = op.OldPath });
-                                localRedo.Add(new RenameOperation { OldPath = op.OldPath, NewPath = op.NewPath });
-                            }
-                            localSuccess++;
-                        }
+                        targetPath = GetUniqueConflictPath(op.OldPath);
                     }
 
-                    return (true, localSuccess, localApplied, localRedo, (string?)null);
-                }).ConfigureAwait(false);
-
-                if (success && successCount > 0)
-                {
-                    _redoStack.Push(redoOps);
+                    await _fileRepository.MoveFileAsync(op.NewPath, targetPath);
+                    applied.Add(new RenameOperation { OldPath = op.NewPath, NewPath = targetPath });
+                    forRedo.Add(new RenameOperation { OldPath = targetPath, NewPath = op.NewPath });
                 }
 
-                return (true, $"Deshecho: {successCount} archivo(s)", successCount, appliedOps);
+                if (applied.Count > 0)
+                    _redoStack.Push(forRedo);
+
+                return (true, $"Deshecho: {applied.Count} archivo(s)", applied.Count, applied);
             }
             catch (Exception ex)
             {
-                // Put back on undo stack if failed
                 _undoStack.Push(operations);
                 return (false, $"Error al deshacer: {ex.Message}", 0, Array.Empty<RenameOperation>());
             }
@@ -105,55 +92,31 @@ namespace OrganizadorCapitulos.Maui.Services
                 return (false, "No hay operaciones para rehacer", 0, Array.Empty<RenameOperation>());
 
             var operations = _redoStack.Pop();
+            var redone = new List<RenameOperation>();
 
             try
             {
-                var (success, successCount, redoneOps, error) = await Task.Run(() =>
+                foreach (var op in operations)
                 {
-                    var localRedone = new List<RenameOperation>();
-                    int localSuccess = 0;
+                    if (!_fileRepository.FileExists(op.OldPath)) continue;
 
-                    foreach (var op in operations)
+                    string targetPath = op.NewPath;
+                    if (_fileRepository.FileExists(op.NewPath))
                     {
-                        if (File.Exists(op.OldPath))
-                        {
-                            if (File.Exists(op.NewPath))
-                            {
-                                var dir = Path.GetDirectoryName(op.NewPath) ?? "";
-                                var name = Path.GetFileNameWithoutExtension(op.NewPath);
-                                var ext = Path.GetExtension(op.NewPath);
-                                var counter = 1;
-                                var targetPath = op.NewPath;
-                                while (File.Exists(targetPath))
-                                {
-                                    targetPath = Path.Combine(dir, $"{name}_{counter}{ext}");
-                                    counter++;
-                                }
-                                File.Move(op.OldPath, targetPath);
-                                localRedone.Add(new RenameOperation { OldPath = op.OldPath, NewPath = targetPath });
-                            }
-                            else
-                            {
-                                File.Move(op.OldPath, op.NewPath);
-                                localRedone.Add(new RenameOperation { OldPath = op.OldPath, NewPath = op.NewPath });
-                            }
-                            localSuccess++;
-                        }
+                        targetPath = GetUniqueConflictPath(op.NewPath);
                     }
 
-                    return (true, localSuccess, localRedone, (string?)null);
-                }).ConfigureAwait(false);
-
-                if (success && successCount > 0)
-                {
-                    _undoStack.Push(redoneOps);
+                    await _fileRepository.MoveFileAsync(op.OldPath, targetPath);
+                    redone.Add(new RenameOperation { OldPath = op.OldPath, NewPath = targetPath });
                 }
 
-                return (true, $"Rehecho: {successCount} archivo(s)", successCount, redoneOps);
+                if (redone.Count > 0)
+                    _undoStack.Push(redone);
+
+                return (true, $"Rehecho: {redone.Count} archivo(s)", redone.Count, redone);
             }
             catch (Exception ex)
             {
-                // Put back on redo stack if failed
                 _redoStack.Push(operations);
                 return (false, $"Error al rehacer: {ex.Message}", 0, Array.Empty<RenameOperation>());
             }
@@ -163,6 +126,20 @@ namespace OrganizadorCapitulos.Maui.Services
         {
             _undoStack.Clear();
             _redoStack.Clear();
+        }
+
+        private static string GetUniqueConflictPath(string path)
+        {
+            var dir = Path.GetDirectoryName(path) ?? "";
+            var name = Path.GetFileNameWithoutExtension(path);
+            var ext = Path.GetExtension(path);
+            var counter = 1;
+            var target = path;
+            while (File.Exists(target))
+            {
+                target = Path.Combine(dir, $"{name}_{counter++}{ext}");
+            }
+            return target;
         }
     }
 }

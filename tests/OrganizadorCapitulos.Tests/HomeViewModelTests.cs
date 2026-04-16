@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
+using System.Threading;
 using System.Threading.Tasks;
 using organizadorCapitulos.Application.Services;
 using organizadorCapitulos.Application.Strategies;
@@ -91,7 +92,7 @@ namespace OrganizadorCapitulos.Tests
         }
 
         [Fact]
-        public async Task HandleDropAsync_SetsStatusAndClearsIsDragging()
+        public async Task HandleDropAsync_ClearsIsDragging()
         {
             var vm = CreateViewModel(new OperationLogService());
             vm.SetDragging(true);
@@ -99,20 +100,21 @@ namespace OrganizadorCapitulos.Tests
             await vm.HandleDropAsync();
 
             Assert.False(vm.IsDragging);
-            Assert.Equal("Usa el botón 'Cargar' para seleccionar carpetas", vm.StatusMessage);
         }
 
         private static HomeViewModel CreateViewModel(OperationLogService logService)
         {
+            var repo = new FileRepository();
             return new HomeViewModel(
-                new FileOrganizerService(new FileRepository(), null),
+                new FileOrganizerService(repo, null),
                 new FakeAIService(),
                 new RenameStrategyFactory(),
                 new FakeMetadataService(),
                 new SettingsService(CreateTemporaryDirectory()),
-                new UndoRedoService(),
+                new UndoRedoService(repo),
                 logService,
-                new FakeThemeService());
+                new FakeThemeService(),
+                new FakeDragDropService());
         }
 
         private static string CreateTemporaryDirectory()
@@ -124,37 +126,47 @@ namespace OrganizadorCapitulos.Tests
 
         private sealed class FakeAIService : IAIService
         {
-            public Task<string?> SuggestTitleAsync(string filePath) => Task.FromResult<string?>(null);
+            public Task<string?> SuggestTitleAsync(string filePath, CancellationToken ct = default) => Task.FromResult<string?>(null);
 
             public bool IsAvailable() => true;
 
-            public Task<ChapterInfo?> AnalyzeFilenameAsync(string filename) => Task.FromResult<ChapterInfo?>(null);
+            public Task<ChapterInfo?> AnalyzeFilenameAsync(string filename, CancellationToken ct = default) => Task.FromResult<ChapterInfo?>(null);
         }
 
         private sealed class FakeMetadataService : IMetadataService
         {
-            public void Configure(string apiKey)
-            {
-            }
+            public void Configure(string apiKey) { }
 
             public bool IsConfigured() => true;
 
-            public Task<List<SeriesSearchResult>> SearchSeriesAsync(string query) => Task.FromResult(new List<SeriesSearchResult>());
+            public Task<List<SeriesSearchResult>> SearchSeriesAsync(string query, CancellationToken ct = default) => Task.FromResult(new List<SeriesSearchResult>());
 
-            public Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode) => Task.FromResult<string?>(null);
+            public Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode, CancellationToken ct = default) => Task.FromResult<string?>(null);
 
-            public Task<(int season, int episode, string title)?> FindEpisodeByTitleAsync(int seriesId, string title) => Task.FromResult<(int season, int episode, string title)?>(null);
+            public Task<(int season, int episode, string title)?> FindEpisodeByTitleAsync(int seriesId, string title, CancellationToken ct = default) => Task.FromResult<(int season, int episode, string title)?>(null);
 
-            public Task<ChapterInfo?> GetEpisodeMetadataAsync(int seriesId, int season, int episode) => Task.FromResult<ChapterInfo?>(null);
+            public Task<ChapterInfo?> GetEpisodeMetadataAsync(int seriesId, int season, int episode, CancellationToken ct = default) => Task.FromResult<ChapterInfo?>(null);
+        }
+
+        private sealed class FakeDragDropService : OrganizadorCapitulos.Maui.Services.Interfaces.IDragDropService
+        {
+            public event Action<IReadOnlyList<string>>? FoldersDropped;
+
+            public void NotifyFoldersDropped(IReadOnlyList<string> folderPaths) =>
+                FoldersDropped?.Invoke(folderPaths);
         }
 
         private sealed class FakeThemeService : IThemeService
         {
+            public event Action<bool>? ThemeChanged;
+
             public bool IsDarkTheme => false;
 
             public Task InitializeAsync() => Task.CompletedTask;
 
             public Task ToggleThemeAsync() => Task.CompletedTask;
+
+            public void SetJsRuntime(object jsRuntime) { }
         }
     }
 }

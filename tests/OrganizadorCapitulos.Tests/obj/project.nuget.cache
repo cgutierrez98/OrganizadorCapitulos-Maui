@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "4UPNquRDeJ4=",
+  "dgSpecHash": "gdhEL8EZIsw=",
   "success": true,
-  "projectFilePath": "c:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj",
+  "projectFilePath": "C:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\carlo\\.nuget\\packages\\communitytoolkit.mvvm\\8.4.0\\communitytoolkit.mvvm.8.4.0.nupkg.sha512",
     "C:\\Users\\carlo\\.nuget\\packages\\coverlet.collector\\3.2.0\\coverlet.collector.3.2.0.nupkg.sha512",

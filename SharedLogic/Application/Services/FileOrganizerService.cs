@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using organizadorCapitulos.Core.Entities;
 using organizadorCapitulos.Core.Interfaces.Observers;
@@ -21,18 +22,18 @@ namespace organizadorCapitulos.Application.Services
             this.progressObserver = progressObserver;
         }
 
-        public async Task<List<string>> LoadVideoFilesAsync(IEnumerable<string> folders)
+        public async Task<List<string>> LoadVideoFilesAsync(IEnumerable<string> folders, CancellationToken ct = default)
         {
             progressObserver?.UpdateStatus("Buscando archivos de video...");
-            var files = await fileRepository.GetVideoFilesAsync(folders);
+            var files = await fileRepository.GetVideoFilesAsync(folders, ct);
             return files.ToList();
         }
 
-        public async Task<string> RenameFileAsync(string sourcePath, ChapterInfo chapterInfo, IRenameStrategy strategy)
+        public async Task<string> RenameFileAsync(string sourcePath, ChapterInfo chapterInfo, IRenameStrategy strategy, CancellationToken ct = default)
         {
             if (!chapterInfo.IsValid())
             {
-                throw new ArgumentException("La información del capítulo no es válida");
+                throw new ArgumentException("La informaciÃ³n del capÃ­tulo no es vÃ¡lida");
             }
 
             string extension = Path.GetExtension(sourcePath);
@@ -46,13 +47,13 @@ namespace organizadorCapitulos.Application.Services
                 destinationPath = GetUniqueFilePath(destinationPath);
             }
 
-            await fileRepository.MoveFileAsync(sourcePath, destinationPath);
+            await fileRepository.MoveFileAsync(sourcePath, destinationPath, ct);
             strategy.UpdateAfterRename(chapterInfo);
 
             return destinationPath;
         }
 
-        public async Task<List<(string oldPath, string newPath)>> MoveFilesAsync(List<string> sourcePaths, string destinationFolder)
+        public async Task<List<(string oldPath, string newPath)>> MoveFilesAsync(List<string> sourcePaths, string destinationFolder, CancellationToken ct = default)
         {
             var movedFiles = new List<(string oldPath, string newPath)>();
             progressObserver?.UpdateStatus("Moviendo archivos...");
@@ -67,6 +68,7 @@ namespace organizadorCapitulos.Application.Services
 
             foreach (string sourcePath in sourcePaths)
             {
+                ct.ThrowIfCancellationRequested();
                 processedFiles++;
                 string fileName = Path.GetFileName(sourcePath);
                 string destinationPath = Path.Combine(destinationFolder, fileName);
@@ -79,7 +81,7 @@ namespace organizadorCapitulos.Application.Services
                     destinationPath = GetUniqueFilePath(destinationPath);
                 }
 
-                await fileRepository.MoveFileAsync(sourcePath, destinationPath);
+                await fileRepository.MoveFileAsync(sourcePath, destinationPath, ct);
                 movedFiles.Add((sourcePath, destinationPath));
             }
 

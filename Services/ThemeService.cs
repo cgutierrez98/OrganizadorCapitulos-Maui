@@ -1,3 +1,4 @@
+using System;
 using Microsoft.JSInterop;
 using OrganizadorCapitulos.Maui.Services.Interfaces;
 
@@ -5,14 +6,20 @@ namespace OrganizadorCapitulos.Maui.Services
 {
     public class ThemeService : IThemeService
     {
-        private readonly IJSRuntime _jsRuntime;
+        private IJSRuntime? _jsRuntime;
         private readonly SettingsService _settingsService;
         private bool _isDarkTheme;
 
-        public ThemeService(IJSRuntime jsRuntime, SettingsService settingsService)
+        public event Action<bool>? ThemeChanged;
+
+        public ThemeService(SettingsService settingsService)
         {
-            _jsRuntime = jsRuntime;
             _settingsService = settingsService;
+        }
+
+        public void SetJsRuntime(object jsRuntime)
+        {
+            _jsRuntime = jsRuntime as IJSRuntime;
         }
 
         public bool IsDarkTheme => _isDarkTheme;
@@ -25,25 +32,32 @@ namespace OrganizadorCapitulos.Maui.Services
                 var saved = _settingsService.Theme;
                 if (!string.IsNullOrEmpty(saved))
                 {
-                    if (saved == "dark")
-                    {
-                        _isDarkTheme = true;
-                        await ApplyThemeAsync();
-                    }
+                    _isDarkTheme = saved == "dark";
+                    await ApplyThemeAsync();
                     return;
                 }
 
                 // Fallback to browser localStorage when running as Blazor
-                var savedTheme = await _jsRuntime.InvokeAsync<string>("localStorage.getItem", "theme");
-                if (savedTheme == "dark")
+                try
                 {
-                    _isDarkTheme = true;
-                    await ApplyThemeAsync();
+                    if (_jsRuntime != null)
+                    {
+                        var savedTheme = await _jsRuntime.InvokeAsync<string>("localStorage.getItem", "theme");
+                        if (savedTheme == "dark")
+                        {
+                            _isDarkTheme = true;
+                            await ApplyThemeAsync();
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore JS interop errors (non-web platforms)
                 }
             }
             catch
             {
-                // Ignore errors during initialization (e.g. prerendering or missing JS runtime)
+                // Ignore errors during initialization
             }
         }
 
@@ -61,8 +75,13 @@ namespace OrganizadorCapitulos.Maui.Services
                 // Apply theme in-browser when JS runtime is available
                 try
                 {
-                    await _jsRuntime.InvokeVoidAsync("eval", $"document.documentElement.setAttribute('data-theme', '{theme}')");
-                    await _jsRuntime.InvokeVoidAsync("localStorage.setItem", "theme", theme);
+                    // Prefer a small JS helper instead of eval for safety and reliability
+                    if (_jsRuntime != null)
+                    {
+                        // Emit a debug message first to help diagnose whether JS interop is reachable
+                        try { await _jsRuntime.InvokeVoidAsync("console.debug", "ThemeService.setDataTheme", theme); } catch { }
+                        await _jsRuntime.InvokeVoidAsync("setDataTheme", theme);
+                    }
                 }
                 catch
                 {
@@ -71,6 +90,9 @@ namespace OrganizadorCapitulos.Maui.Services
 
                 // Persist theme cross-platform via SettingsService
                 _settingsService.Theme = theme;
+
+                // Notify subscribers about the change
+                ThemeChanged?.Invoke(_isDarkTheme);
             }
             catch
             {

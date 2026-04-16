@@ -18,7 +18,7 @@ namespace organizadorCapitulos.Application.Strategies
 
         public string GetDescription()
         {
-            return "Mantener - Conserva el nombre del archivo.";
+            return "Incrementar - Conserva serie y temporada; numera episodios en orden secuencial.";
         }
     }
 }

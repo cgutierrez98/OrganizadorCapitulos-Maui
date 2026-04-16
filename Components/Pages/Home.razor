@@ -5,6 +5,7 @@
 @using OrganizadorCapitulos.Maui.Services.Interfaces
 @using System.ComponentModel
 @inject HomeViewModel ViewModel
+@inject Microsoft.JSInterop.IJSRuntime JS
 @implements IDisposable
 
 <div class="home-shell" @ondragover="HandleDragOver" @ondragover:preventDefault="true"
@@ -51,14 +52,15 @@
     </header>
 
     <section class="action-bar surface-panel" aria-label="Acciones principales">
+        <!-- Primary Workflow Actions -->
         <div class="action-group action-group-primary">
-            <button type="button" class="btn btn-primary action-button action-button-primary"
+            <button type="button" class="btn btn-primary action-button action-button-hero"
                 @onclick="() => ViewModel.ShowFolderBrowserCommand.Execute(null)" aria-label="Cargar carpetas"
                 data-shortcut="ctrl+o" title="Cargar carpetas (Ctrl+O)">
-                <span class="action-icon" aria-hidden="true">ADD</span>
+                <span class="action-icon" aria-hidden="true">📁</span>
                 <span class="action-copy">
                     <strong>Cargar carpetas</strong>
-                    <small>Importa archivos de video desde una o varias ubicaciones.</small>
+                    <small>Importa archivos de video</small>
                 </span>
             </button>
 
@@ -66,10 +68,10 @@
                 @onclick="() => ViewModel.AnalyzeWithAICommand.Execute(null)"
                 disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)" aria-label="Analizar archivos con IA"
                 data-shortcut="ctrl+i" title="Analizar con IA (Ctrl+I)">
-                <span class="action-icon" aria-hidden="true">AI</span>
+                <span class="action-icon" aria-hidden="true">🤖</span>
                 <span class="action-copy">
                     <strong>Analizar con IA</strong>
-                    <small>Detecta serie, temporada y episodio a partir del nombre del archivo.</small>
+                    <small>Detecta serie y episodio</small>
                 </span>
             </button>
 
@@ -77,106 +79,130 @@
                 @onclick="() => ViewModel.OpenTmdbSearchCommand.Execute(null)"
                 disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)" aria-label="Buscar metadatos en TMDB"
                 data-shortcut="ctrl+t" title="Buscar en TMDB (Ctrl+T)">
-                <span class="action-icon" aria-hidden="true">DB</span>
+                <span class="action-icon" aria-hidden="true">🔍</span>
                 <span class="action-copy">
                     <strong>Buscar en TMDB</strong>
-                    <small>Completa títulos y metadatos consultando la base externa.</small>
+                    <small>Completa metadatos</small>
                 </span>
             </button>
         </div>
 
+        <!-- Secondary Actions (Execution) -->
         <div class="action-group action-group-secondary">
-            <button type="button" class="btn btn-warning action-chip"
-                @onclick="() => ViewModel.RenameSelectedCommand.Execute(null)"
-                disabled="@(ViewModel.SelectedFile == null || ViewModel.IsProcessing)" aria-label="Renombrar archivo seleccionado"
-                data-shortcut="f2" title="Renombrar seleccionado (F2)">
-                Renombrar seleccionado
-            </button>
-            <button type="button" class="btn btn-success action-chip"
+            <button type="button" class="btn btn-success btn-lg action-button-cta"
                 @onclick="() => ViewModel.RenameAllCommand.Execute(null)"
-                disabled="@(ViewModel.AnalyzedCount == 0 || ViewModel.IsProcessing)" aria-label="Renombrar todos los archivos listos"
+                disabled="@(ViewModel.AnalyzedCount == 0 || ViewModel.IsProcessing)" 
+                aria-label="Renombrar todos los archivos listos"
                 data-shortcut="ctrl+enter" title="Renombrar todo (Ctrl+Enter)">
-                Renombrar todo
-            </button>
-            <button type="button" class="btn btn-outline-primary action-chip"
-                @onclick="() => ViewModel.OpenSaveAllCommand.Execute(null)"
-                disabled="@(!ViewModel.Files.Any() || ViewModel.IsProcessing)" aria-label="Mover archivos a otra carpeta"
-                data-shortcut="ctrl+m" title="Mover archivos (Ctrl+M)">
-                Mover archivos
+                <span class="action-icon" aria-hidden="true">✨</span>
+                <strong>Renombrar @ViewModel.AnalyzedCount archivo@(ViewModel.AnalyzedCount != 1 ? "s" : "")</strong>
             </button>
         </div>
 
+        <!-- Utility Actions (collapsed) -->
         <div class="action-group action-group-utility">
-            <button type="button" class="btn btn-outline-secondary action-chip"
-                @onclick="() => ViewModel.UndoCommand.Execute(null)"
-                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer (Ctrl+Z)"
-                aria-label="Deshacer último cambio" data-shortcut="ctrl+z">
-                Deshacer @(ViewModel.UndoRedo.UndoCount > 0 ? $"({ViewModel.UndoRedo.UndoCount})" : "")
-            </button>
-            <button type="button" class="btn btn-outline-secondary action-chip"
-                @onclick="() => ViewModel.RedoCommand.Execute(null)"
-                disabled="@(!ViewModel.UndoRedo.CanRedo || ViewModel.IsProcessing)" title="Rehacer (Ctrl+Y)"
-                aria-label="Rehacer último cambio revertido" data-shortcut="ctrl+y">
-                Rehacer @(ViewModel.UndoRedo.RedoCount > 0 ? $"({ViewModel.UndoRedo.RedoCount})" : "")
-            </button>
-            <button type="button" class="btn btn-outline-danger action-chip"
-                @onclick="() => ViewModel.UndoAllCommand.Execute(null)"
-                disabled="@(!ViewModel.UndoRedo.CanUndo || ViewModel.IsProcessing)" title="Deshacer todos los cambios"
-                aria-label="Deshacer todos los cambios realizados">
-                Deshacer todo
-            </button>
+            <div class="utility-dropdown">
+                <button type="button" class="btn btn-ghost action-chip" 
+                    title="Más acciones" aria-label="Menú de utilidades" aria-haspopup="true">
+                    ⋮ Más
+                </button>
+            </div>
 
-            <div class="toolbar-divider" aria-hidden="true"></div>
-
-            <button type="button" class="btn btn-outline-secondary action-chip"
-                @onclick="() => ViewModel.OpenOperationLogCommand.Execute(null)" aria-label="Abrir historial de operaciones"
-                data-shortcut="ctrl+h" title="Historial de operaciones (Ctrl+H)">
-                Historial
+            <button type="button" class="btn btn-ghost action-chip-icon"
+                @onclick="() => ViewModel.OpenOperationLogCommand.Execute(null)" 
+                aria-label="Abrir historial de operaciones"
+                data-shortcut="ctrl+h" title="Historial (Ctrl+H)">
+                📋
             </button>
 
             <button type="button" class="theme-toggle"
                 @onclick="async () => { await ViewModel.ThemeService.ToggleThemeAsync(); await InvokeAsync(StateHasChanged); }"
-                title="Cambiar tema" aria-label="@(ViewModel.ThemeService.IsDarkTheme ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
+                title="Cambiar tema" 
+                aria-label="@(ViewModel.ThemeService.IsDarkTheme ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
                 data-shortcut="ctrl+d">
-                <span class="theme-toggle-glyph" aria-hidden="true">@(ViewModel.ThemeService.IsDarkTheme ? "Light" : "Dark")</span>
+                <span class="theme-toggle-glyph" aria-hidden="true">@(ViewModel.ThemeService.IsDarkTheme ? "☀️" : "🌙")</span>
             </button>
-            <button type="button" class="btn btn-outline-secondary action-chip"
-                @onclick="() => ViewModel.OpenSettingsCommand.Execute(null)" aria-label="Abrir configuración"
+            
+            <button type="button" class="btn btn-ghost action-chip-icon"
+                @onclick="() => ViewModel.OpenSettingsCommand.Execute(null)" 
+                aria-label="Abrir configuración"
                 data-shortcut="ctrl+comma" title="Preferencias (Ctrl+,)">
-                Preferencias
+                ⚙️
             </button>
         </div>
     </section>
 
-    <section class="desktop-hud surface-panel" aria-label="Ayudas de escritorio y contexto activo">
-        <div class="desktop-shortcuts">
-            <span class="desktop-hud-title">Atajos</span>
-            <div class="shortcut-list">
-                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>O</kbd><span>Cargar</span></span>
-                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>I</kbd><span>IA</span></span>
-                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>T</kbd><span>TMDB</span></span>
-                <span class="shortcut-chip"><kbd>F2</kbd><span>Renombrar</span></span>
-                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>Enter</kbd><span>Renombrar todo</span></span>
-                <span class="shortcut-chip"><kbd>Ctrl</kbd><kbd>Z</kbd><span>Deshacer</span></span>
-            </div>
-        </div>
-
-        <div class="desktop-selection-summary" aria-live="polite">
-            <span class="desktop-hud-title">Selección</span>
-            @if (ViewModel.SelectedFile is null)
+    <!-- Floating Quick Actions (context-aware) -->
+    @if (ViewModel.Files.Any() && !ViewModel.IsProcessing)
+    {
+        <div class="quick-actions-fab" role="toolbar" aria-label="Acciones rápidas">
+            @if (ViewModel.SelectedFile != null)
             {
-                <p class="desktop-selection-empty">Selecciona un archivo para ver su contexto rápido y operar con F2.</p>
+                <button type="button" class="fab-button fab-button-primary"
+                    @onclick="() => ViewModel.RenameSelectedCommand.Execute(null)"
+                    aria-label="Renombrar archivo seleccionado (F2)"
+                    title="Renombrar seleccionado (F2)">
+                    <span class="fab-icon">✏️</span>
+                    <span class="fab-label">Renombrar</span>
+                </button>
+            }
+            
+            @if (ViewModel.UndoRedo.CanUndo)
+            {
+                <button type="button" class="fab-button fab-button-secondary"
+                    @onclick="() => ViewModel.UndoCommand.Execute(null)"
+                    aria-label="Deshacer último cambio (Ctrl+Z)"
+                    title="Deshacer @(ViewModel.UndoRedo.UndoCount) cambio@(ViewModel.UndoRedo.UndoCount != 1 ? "s" : "") (Ctrl+Z)">
+                    <span class="fab-icon">↶</span>
+                    <span class="fab-label">@ViewModel.UndoRedo.UndoCount</span>
+                </button>
+            }
+            
+            <button type="button" class="fab-button fab-button-tertiary"
+                @onclick="() => ViewModel.OpenSaveAllCommand.Execute(null)"
+                aria-label="Mover archivos a otra carpeta (Ctrl+M)"
+                title="Mover archivos (Ctrl+M)">
+                <span class="fab-icon">📦</span>
+                <span class="fab-label">Mover</span>
+            </button>
+        </div>
+    }
+
+    <!-- Compact Context Bar (replaces desktop-hud) -->
+    @if (ViewModel.Files.Any())
+    {
+        <section class="context-bar surface-panel" aria-label="Contexto actual" aria-live="polite">
+            @if (ViewModel.SelectedFile != null)
+            {
+                <div class="context-card">
+                    <span class="context-label">Seleccionado:</span>
+                    <strong class="context-value" title="@ViewModel.SelectedFile.OriginalName">@TruncateFileName(ViewModel.SelectedFile.OriginalName, 40)</strong>
+                    <span class="badge @GetBadgeClass(ViewModel.SelectedFile.Status)">@GetStatusLabel(ViewModel.SelectedFile.Status)</span>
+                </div>
+                
+                @if (!string.IsNullOrEmpty(ViewModel.SelectedFile.NewName))
+                {
+                    <div class="context-divider">→</div>
+                    <div class="context-card context-card-preview">
+                        <span class="context-label">Nuevo nombre:</span>
+                        <code class="context-value-preview" title="@ViewModel.SelectedFile.NewName">@TruncateFileName(ViewModel.SelectedFile.NewName, 40)</code>
+                    </div>
+                }
             }
             else
             {
-                <div class="selection-card-mini">
-                    <strong class="selection-card-title">@ViewModel.SelectedFile.OriginalName</strong>
-                    <span class="selection-card-meta">Estado: @GetStatusLabel(ViewModel.SelectedFile.Status)</span>
-                    <span class="selection-card-meta">Preview: @(string.IsNullOrWhiteSpace(ViewModel.SelectedFile.NewName) ? "Aún no disponible" : ViewModel.SelectedFile.NewName)</span>
+                <div class="context-empty">
+                    <span class="context-hint">💡 Tip: Selecciona un archivo de la lista para ver su vista previa aquí</span>
                 </div>
             }
-        </div>
-    </section>
+            
+            <button type="button" class="btn-link-subtle" 
+                @onclick="() => showShortcutsTooltip = !showShortcutsTooltip"
+                aria-label="Ver atajos de teclado" title="Ver atajos (?)">
+                ⌨️ Atajos
+            </button>
+        </section>
+    }
 
     <!-- Progress Bar (visible during processing) -->
     @if (ViewModel.IsProcessing)
@@ -268,14 +294,30 @@
 }
 
 @code {
+    private bool showShortcutsTooltip = false;
+
     protected override async Task OnInitializedAsync()
     {
+        // Provide JS runtime to the theme service (required for DOM updates)
+        ViewModel.ThemeService.SetJsRuntime(JS);
+
         // Initialize services (theme, etc.) from the ViewModel
         await ViewModel.InitializeAsync();
         ViewModel.PropertyChanged += ViewModelPropertyChanged;
+
+        // Subscribe to theme changes so the UI updates when theme toggles elsewhere
+        if (ViewModel?.ThemeService != null)
+        {
+            ViewModel.ThemeService.ThemeChanged += OnThemeChanged;
+        }
     }
 
     private void ViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnThemeChanged(bool _)
     {
         InvokeAsync(StateHasChanged);
     }
@@ -303,8 +345,34 @@
         _ => "Pendiente"
     };
 
+    private static string GetBadgeClass(FileStatus status) => status switch
+    {
+        FileStatus.Done => "badge-success",
+        FileStatus.Analyzed => "badge-info",
+        FileStatus.Error => "badge-danger",
+        _ => "badge-secondary"
+    };
+
+    private static string TruncateFileName(string fileName, int maxLength)
+    {
+        if (string.IsNullOrEmpty(fileName) || fileName.Length <= maxLength)
+            return fileName;
+        
+        var extension = System.IO.Path.GetExtension(fileName);
+        var nameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(fileName);
+        var truncated = nameWithoutExt.Length > (maxLength - extension.Length - 3)
+            ? nameWithoutExt.Substring(0, maxLength - extension.Length - 3) + "..."
+            : nameWithoutExt;
+        
+        return truncated + extension;
+    }
+
     public void Dispose()
     {
         ViewModel.PropertyChanged -= ViewModelPropertyChanged;
+        if (ViewModel?.ThemeService != null)
+        {
+            ViewModel.ThemeService.ThemeChanged -= OnThemeChanged;
+        }
     }
 }

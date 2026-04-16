@@ -1,7 +1,7 @@
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using organizadorCapitulos.Core.Entities;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace organizadorCapitulos.Core.Interfaces.Services
 {
@@ -9,9 +9,9 @@ namespace organizadorCapitulos.Core.Interfaces.Services
     {
         void Configure(string apiKey);
         bool IsConfigured();
-        Task<List<SeriesSearchResult>> SearchSeriesAsync(string query);
-        Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode);
-        Task<(int season, int episode, string title)?> FindEpisodeByTitleAsync(int seriesId, string title);
-        Task<ChapterInfo?> GetEpisodeMetadataAsync(int seriesId, int season, int episode);
+        Task<List<SeriesSearchResult>> SearchSeriesAsync(string query, CancellationToken ct = default);
+        Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode, CancellationToken ct = default);
+        Task<(int season, int episode, string title)?> FindEpisodeByTitleAsync(int seriesId, string title, CancellationToken ct = default);
+        Task<ChapterInfo?> GetEpisodeMetadataAsync(int seriesId, int season, int episode, CancellationToken ct = default);
     }
 }

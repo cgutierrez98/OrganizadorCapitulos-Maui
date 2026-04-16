@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using organizadorCapitulos.Core.Entities;
 using organizadorCapitulos.Core.Interfaces.Services;
@@ -58,7 +59,7 @@ namespace organizadorCapitulos.Infrastructure.Services
         }
 
         private async Task<(int? exitCode, string stdout, string stderr, bool timedOut)> RunPythonProcessAsync(
-            string script, string command, string inputArg, int timeoutMs = 5000)
+            string script, string command, string inputArg, int timeoutMs = 5000, CancellationToken ct = default)
         {
             var psi = new ProcessStartInfo("python")
             {
@@ -74,6 +75,9 @@ namespace organizadorCapitulos.Infrastructure.Services
             psi.ArgumentList.Add("--input");
             psi.ArgumentList.Add(inputArg);
 
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeoutMs);
+
             try
             {
                 using var p = Process.Start(psi);
@@ -82,10 +86,13 @@ namespace organizadorCapitulos.Infrastructure.Services
                 var stdoutTask = p.StandardOutput.ReadToEndAsync();
                 var stderrTask = p.StandardError.ReadToEndAsync();
 
-                var waitTask = p.WaitForExitAsync();
-                var completed = await Task.WhenAny(waitTask, Task.Delay(timeoutMs)).ConfigureAwait(false);
-                if (completed != waitTask)
+                try
                 {
+                    await p.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Timed out (not user-cancelled)
                     try { p.Kill(true); } catch { }
                     return (null, await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false), true);
                 }
@@ -94,17 +101,21 @@ namespace organizadorCapitulos.Infrastructure.Services
                 var stderr = await stderrTask.ConfigureAwait(false);
                 return (p.ExitCode, stdout, stderr, false);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 return (null, string.Empty, ex.Message, false);
             }
         }
 
-        public async Task<string?> SuggestTitleAsync(string filePath)
+        public async Task<string?> SuggestTitleAsync(string filePath, CancellationToken ct = default)
         {
             var script = FindScriptPath();
             if (script == null) return null;
-            var (exitCode, stdout, _, timedOut) = await RunPythonProcessAsync(script, "normalize", filePath, 5000).ConfigureAwait(false);
+            var (exitCode, stdout, _, timedOut) = await RunPythonProcessAsync(script, "normalize", filePath, 5000, ct).ConfigureAwait(false);
             if (timedOut) return null;
             if (exitCode == null || exitCode != 0) return null;
             if (string.IsNullOrWhiteSpace(stdout)) return null;
@@ -125,11 +136,11 @@ namespace organizadorCapitulos.Infrastructure.Services
             return null;
         }
 
-        public async Task<organizadorCapitulos.Core.Entities.ChapterInfo?> AnalyzeFilenameAsync(string filename)
+        public async Task<organizadorCapitulos.Core.Entities.ChapterInfo?> AnalyzeFilenameAsync(string filename, CancellationToken ct = default)
         {
             var script = FindScriptPath();
             if (script == null) return null;
-            var (exitCode, stdout, _, timedOut) = await RunPythonProcessAsync(script, "analyze", filename, 8000).ConfigureAwait(false);
+            var (exitCode, stdout, _, timedOut) = await RunPythonProcessAsync(script, "analyze", filename, 8000, ct).ConfigureAwait(false);
             if (timedOut) return null;
             if (exitCode == null || exitCode != 0) return null;
             if (string.IsNullOrWhiteSpace(stdout)) return null;

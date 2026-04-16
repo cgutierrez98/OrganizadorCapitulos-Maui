@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj": {}
+    "C:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj": {}
   },
   "projects": {
-    "c:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj": {
+    "C:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj",
+        "projectUniqueName": "C:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj",
         "projectName": "OrganizadorCapitulos.Tests",
-        "projectPath": "c:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj",
+        "projectPath": "C:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\OrganizadorCapitulos.Tests.csproj",
         "packagesPath": "C:\\Users\\carlo\\.nuget\\packages\\",
-        "outputPath": "c:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\obj\\",
+        "outputPath": "C:\\Users\\carlo\\source\\repos\\OrganizadorCapitulos-Maui\\tests\\OrganizadorCapitulos.Tests\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

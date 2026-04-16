@@ -58,7 +58,7 @@ namespace OrganizadorCapitulos.Tests
             {
                 Title = "Breaking Bad",
                 Season = 1,
-                Chapter = 1,
+                Episode = 1,
                 EpisodeTitle = "Pilot"
             }, new ChangeStrategy());
 

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using organizadorCapitulos.Core.Exceptions;
 using organizadorCapitulos.Core.Interfaces.Repositories;
@@ -11,7 +12,7 @@ namespace organizadorCapitulos.Infrastructure.Repositories
     {
         private readonly string[] _videoExtensions = { ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".mpeg", ".webm" };
 
-        public async Task<IEnumerable<string>> GetVideoFilesAsync(IEnumerable<string> folders)
+        public async Task<IEnumerable<string>> GetVideoFilesAsync(IEnumerable<string> folders, CancellationToken ct = default)
         {
             return await Task.Run(() =>
             {
@@ -20,6 +21,7 @@ namespace organizadorCapitulos.Infrastructure.Repositories
 
                 foreach (string folder in folders)
                 {
+                    ct.ThrowIfCancellationRequested();
                     try
                     {
                         var folderFiles = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories)
@@ -32,14 +34,14 @@ namespace organizadorCapitulos.Infrastructure.Repositories
                     }
                 }
                 return allFiles;
-            });
+            }, ct);
         }
 
-        public async Task MoveFileAsync(string sourcePath, string destinationPath)
+        public async Task MoveFileAsync(string sourcePath, string destinationPath, CancellationToken ct = default)
         {
             try
             {
-                await Task.Run(() => File.Move(sourcePath, destinationPath));
+                await Task.Run(() => File.Move(sourcePath, destinationPath), ct);
             }
             catch (System.Exception ex)
             {
@@ -47,11 +49,11 @@ namespace organizadorCapitulos.Infrastructure.Repositories
             }
         }
 
-        public async Task CopyFileAsync(string sourcePath, string destinationPath)
+        public async Task CopyFileAsync(string sourcePath, string destinationPath, CancellationToken ct = default)
         {
             try
             {
-                await Task.Run(() => File.Copy(sourcePath, destinationPath, true));
+                await Task.Run(() => File.Copy(sourcePath, destinationPath, true), ct);
             }
             catch (System.Exception ex)
             {

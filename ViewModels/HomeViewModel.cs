@@ -23,6 +23,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         private readonly UndoRedoService _undoRedoService;
         private readonly OperationLogService _logService;
         private readonly IThemeService _themeService;
+        private readonly IDragDropService _dragDropService;
 
         // Dependencies needed for specific logic
         private string? _maintainSeriesTitle;
@@ -108,7 +109,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             SettingsService settingsService,
             UndoRedoService undoRedoService,
             OperationLogService logService,
-            IThemeService themeService)
+            IThemeService themeService,
+            IDragDropService dragDropService)
         {
             _fileOrganizerService = fileOrganizerService;
             _aiService = aiService;
@@ -118,6 +120,9 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             _undoRedoService = undoRedoService;
             _logService = logService;
             _themeService = themeService;
+            _dragDropService = dragDropService;
+
+            _dragDropService.FoldersDropped += OnFoldersDropped;
 
             // Initialize saved settings
             if (!string.IsNullOrEmpty(_settingsService.TmdbApiKey))
@@ -143,12 +148,15 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             IsDragging = dragging;
         }
 
-        public async Task HandleDropAsync()
+        public Task HandleDropAsync()
         {
-            // Default drop behavior: inform user to use the folder browser
             IsDragging = false;
-            StatusMessage = "Usa el botón 'Cargar' para seleccionar carpetas";
-            await Task.CompletedTask;
+            return Task.CompletedTask;
+        }
+
+        private async void OnFoldersDropped(IReadOnlyList<string> folders)
+        {
+            await LoadFoldersAsync(new System.Collections.Generic.List<string>(folders));
         }
 
         [RelayCommand]
@@ -206,6 +214,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 return;
             }
 
+            _operationCts?.Cancel();
+            _operationCts?.Dispose();
             _operationCts = new CancellationTokenSource();
             var ct = _operationCts.Token;
 
@@ -224,12 +234,12 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
                     try
                     {
-                        var result = await _aiService.AnalyzeFilenameAsync(file.OriginalName);
+                        var result = await _aiService.AnalyzeFilenameAsync(file.OriginalName, ct);
                         if (result != null)
                         {
                             file.SeriesTitle = result.Title ?? "";
                             file.Season = result.Season;
-                            file.Episode = result.Chapter;
+                            file.Episode = result.Episode;
                             file.EpisodeTitle = result.EpisodeTitle ?? "";
                             file.Status = FileStatus.Analyzed;
                             UpdatePreviewForFile(file);
@@ -276,8 +286,11 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             file.IsSelected = true;
             SelectedFile = file;
 
-            // Maintain mode logic
-            if (CurrentMode == RenameMode.Maintain && previousFile != null && !string.IsNullOrEmpty(previousFile.SeriesTitle))
+            // Maintain mode: auto-fill only if the file has no metadata yet
+            if (CurrentMode == RenameMode.Maintain
+                && previousFile != null
+                && !string.IsNullOrEmpty(previousFile.SeriesTitle)
+                && string.IsNullOrEmpty(file.SeriesTitle))
             {
                 file.SeriesTitle = previousFile.SeriesTitle;
                 file.Season = previousFile.Season;
@@ -294,6 +307,19 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             var filesToRename = Files.Where(f => f.Status == FileStatus.Analyzed).ToList();
             if (!filesToRename.Any()) return;
 
+            // Validate: in Change mode, every file must have an episode number
+            if (CurrentMode == RenameMode.Change)
+            {
+                var invalid = filesToRename.Where(f => f.Episode <= 0).ToList();
+                if (invalid.Any())
+                {
+                    StatusMessage = $"Error: {invalid.Count} archivo(s) sin número de episodio válido. Corrígelos antes de renombrar.";
+                    return;
+                }
+            }
+
+            _operationCts?.Cancel();
+            _operationCts?.Dispose();
             _operationCts = new CancellationTokenSource();
             var ct = _operationCts.Token;
 
@@ -348,7 +374,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 {
                     Title = file.SeriesTitle,
                     Season = file.Season,
-                    Chapter = file.Episode,
+                    Episode = file.Episode,
                     EpisodeTitle = file.EpisodeTitle
                 };
 
@@ -356,7 +382,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 {
                     chapterInfo.Title = _maintainSeriesTitle;
                     chapterInfo.Season = _maintainSeason;
-                    chapterInfo.Chapter = _maintainNextEpisode;
+                    chapterInfo.Episode = _maintainNextEpisode;
                     _maintainNextEpisode++;
                 }
 
@@ -373,7 +399,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 // Update displayed metadata
                 file.SeriesTitle = chapterInfo.Title;
                 file.Season = chapterInfo.Season;
-                file.Episode = chapterInfo.Chapter;
+                file.Episode = chapterInfo.Episode;
             }
             catch (Exception ex)
             {
@@ -502,7 +528,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 {
                     Title = file.SeriesTitle,
                     Season = file.Season,
-                    Chapter = file.Episode,
+                    Episode = file.Episode,
                     EpisodeTitle = file.EpisodeTitle
                 };
 

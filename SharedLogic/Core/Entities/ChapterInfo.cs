@@ -7,13 +7,6 @@ namespace organizadorCapitulos.Core.Entities
         public string Title { get; set; } = string.Empty;
         public string EpisodeTitle { get; set; } = string.Empty;
 
-        // Backwards-compatible aliases expected by MAUI code
-        public int Chapter
-        {
-            get => Episode;
-            set => Episode = value;
-        }
-
         public bool IsValid()
         {
             return Episode > 0 || !string.IsNullOrWhiteSpace(Title) || !string.IsNullOrWhiteSpace(EpisodeTitle);
