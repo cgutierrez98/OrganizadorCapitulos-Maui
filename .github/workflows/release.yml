@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión (p. ej. 1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $v = '${{ github.event.inputs.version }}'
+          } else {
+            $v = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet test tests/OrganizadorCapitulos.Tests/OrganizadorCapitulos.Tests.csproj -c Release
+
+      - name: Publish
+        run: >
+          dotnet publish OrganizadorCapitulos.Maui.csproj -c Release
+          -f net9.0-windows10.0.19041.0 -r win-x64 --self-contained true
+          -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true
+          -p:ApplicationDisplayVersion=${{ steps.ver.outputs.version }}
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path publish\* -DestinationPath OrganizadorCapitulos-${{ steps.ver.outputs.tag }}-win-x64.zip
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: OrganizadorCapitulos-${{ steps.ver.outputs.tag }}-win-x64.zip
