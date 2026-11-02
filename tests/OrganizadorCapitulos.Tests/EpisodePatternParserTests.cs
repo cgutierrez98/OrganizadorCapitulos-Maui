@@ -72,6 +72,26 @@ namespace OrganizadorCapitulos.Tests
             Assert.Equal(expectedEpisode, episode);
         }
 
+        [Fact]
+        public void TryExtractSeasonEpisode_DottedMovieYear_IsNotAnEpisode()
+        {
+            var result = EpisodePatternParser.TryExtractSeasonEpisode("The.Matrix.1999.1080p.BluRay.mkv", out var season, out var episode);
+
+            Assert.False(result);
+            Assert.Equal(0, season);
+            Assert.Equal(0, episode);
+        }
+
+        [Fact]
+        public void TryExtractSeasonEpisode_YearBeforeAbsoluteEpisode_UsesAbsoluteEpisode()
+        {
+            var result = EpisodePatternParser.TryExtractSeasonEpisode("Series.1999.150.mkv", out var season, out var episode);
+
+            Assert.True(result);
+            Assert.Equal(1, season);
+            Assert.Equal(150, episode);
+        }
+
         [Theory]
         [InlineData("just a movie name.mkv")]
         [InlineData("random file.mp4")]

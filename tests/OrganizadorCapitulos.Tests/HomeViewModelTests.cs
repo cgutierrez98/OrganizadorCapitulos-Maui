@@ -102,12 +102,115 @@ namespace OrganizadorCapitulos.Tests
             Assert.False(vm.IsDragging);
         }
 
-        private static HomeViewModel CreateViewModel(OperationLogService logService)
+        [Fact]
+        public async Task LoadFoldersAsync_AutoAnalyzesEpisodesAndMovies()
+        {
+            var folder = CreateTemporaryDirectory();
+            await File.WriteAllTextAsync(Path.Combine(folder, "Breaking.Bad.S01E05.mkv"), "episode");
+            await File.WriteAllTextAsync(Path.Combine(folder, "The.Matrix.1999.1080p.BluRay.mkv"), "movie");
+            var vm = CreateViewModel(new OperationLogService());
+
+            await vm.LoadFoldersCommand.ExecuteAsync(new List<string> { folder });
+
+            Assert.Equal(2, vm.Files.Count);
+            var episode = Assert.Single(vm.Files, file => file.OriginalName.StartsWith("Breaking.Bad", StringComparison.Ordinal));
+            Assert.Equal(organizadorCapitulos.Core.Enums.FileStatus.Analyzed, episode.Status);
+            Assert.Equal(1, episode.Season);
+            Assert.Equal(5, episode.Episode);
+
+            var movie = Assert.Single(vm.Files, file => file.OriginalName.StartsWith("The.Matrix", StringComparison.Ordinal));
+            Assert.Equal(organizadorCapitulos.Core.Enums.FileStatus.Analyzed, movie.Status);
+            Assert.Equal(1999, movie.Year);
+            Assert.Equal(0, movie.Season);
+            Assert.Equal(0, movie.Episode);
+            Assert.Contains("The Matrix", movie.SeriesTitle, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task AnalyzeWithAIAsync_MapsMetadataToFile()
+        {
+            var aiService = new FakeAIService((_, _) => Task.FromResult<ChapterInfo?>(new ChapterInfo
+            {
+                Title = "Example Series",
+                Season = 2,
+                Episode = 4,
+                EpisodeTitle = "The Test"
+            }));
+            var vm = CreateViewModel(new OperationLogService(), aiService);
+            var file = new FileViewModel { OriginalName = "unrecognized.mkv", FullPath = "unrecognized.mkv" };
+            vm.Files.Add(file);
+
+            await vm.AnalyzeWithAICommand.ExecuteAsync(null);
+
+            Assert.Equal(organizadorCapitulos.Core.Enums.FileStatus.Analyzed, file.Status);
+            Assert.Equal("Example Series", file.SeriesTitle);
+            Assert.Equal(2, file.Season);
+            Assert.Equal(4, file.Episode);
+            Assert.Equal("The Test", file.EpisodeTitle);
+        }
+
+        [Fact]
+        public async Task AnalyzeWithAIAsync_CancellationLeavesCurrentFilePending()
+        {
+            var aiService = new FakeAIService(async (_, cancellationToken) =>
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return null;
+            });
+            var vm = CreateViewModel(new OperationLogService(), aiService);
+            var file = new FileViewModel { OriginalName = "unrecognized.mkv", FullPath = "unrecognized.mkv" };
+            vm.Files.Add(file);
+
+            var analysisTask = vm.AnalyzeWithAICommand.ExecuteAsync(null);
+            await aiService.WaitUntilAnalysisStartsAsync();
+            vm.CancelOperationCommand.Execute(null);
+            await analysisTask;
+
+            Assert.Equal(organizadorCapitulos.Core.Enums.FileStatus.Pending, file.Status);
+            Assert.Equal("Análisis cancelado", vm.StatusMessage);
+            Assert.False(vm.IsProcessing);
+        }
+
+        [Fact]
+        public async Task ConfirmDryRunAsync_RenamesAnalyzedFile()
+        {
+            var folder = CreateTemporaryDirectory();
+            var sourcePath = Path.Combine(folder, "source.mkv");
+            await File.WriteAllTextAsync(sourcePath, "video");
+            var vm = CreateViewModel(new OperationLogService());
+            vm.ChangeModeCommand.Execute(organizadorCapitulos.Core.Enums.RenameMode.Change);
+            var file = new FileViewModel
+            {
+                FullPath = sourcePath,
+                OriginalName = Path.GetFileName(sourcePath),
+                SeriesTitle = "Example Series",
+                Season = 1,
+                Episode = 3,
+                Status = organizadorCapitulos.Core.Enums.FileStatus.Analyzed
+            };
+            vm.Files.Add(file);
+            vm.UpdatePreviewForFile(file);
+
+            await vm.RenameAllCommand.ExecuteAsync(null);
+
+            Assert.True(vm.ShowingDryRun);
+            Assert.Single(vm.DryRunPreview);
+            Assert.Equal("source.mkv", vm.DryRunPreview[0].original);
+
+            await vm.ConfirmDryRunCommand.ExecuteAsync(null);
+
+            Assert.False(File.Exists(sourcePath));
+            Assert.True(File.Exists(file.FullPath));
+            Assert.Equal(organizadorCapitulos.Core.Enums.FileStatus.Done, file.Status);
+            Assert.Equal(1, vm.UndoRedo.UndoCount);
+        }
+
+        private static HomeViewModel CreateViewModel(OperationLogService logService, FakeAIService? aiService = null)
         {
             var repo = new FileRepository();
             return new HomeViewModel(
                 new FileOrganizerService(repo, null),
-                new FakeAIService(),
+                aiService ?? new FakeAIService(),
                 new RenameStrategyFactory(),
                 new FakeMetadataService(),
                 new SettingsService(CreateTemporaryDirectory()),
@@ -126,11 +229,25 @@ namespace OrganizadorCapitulos.Tests
 
         private sealed class FakeAIService : IAIService
         {
+            private readonly Func<string, CancellationToken, Task<ChapterInfo?>> _analyzeFilename;
+            private readonly TaskCompletionSource _analysisStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public FakeAIService(Func<string, CancellationToken, Task<ChapterInfo?>>? analyzeFilename = null)
+            {
+                _analyzeFilename = analyzeFilename ?? ((_, _) => Task.FromResult<ChapterInfo?>(null));
+            }
+
             public Task<string?> SuggestTitleAsync(string filePath, CancellationToken ct = default) => Task.FromResult<string?>(null);
 
             public bool IsAvailable() => true;
 
-            public Task<ChapterInfo?> AnalyzeFilenameAsync(string filename, CancellationToken ct = default) => Task.FromResult<ChapterInfo?>(null);
+            public Task<ChapterInfo?> AnalyzeFilenameAsync(string filename, CancellationToken ct = default)
+            {
+                _analysisStarted.TrySetResult();
+                return _analyzeFilename(filename, ct);
+            }
+
+            public Task WaitUntilAnalysisStartsAsync() => _analysisStarted.Task;
         }
 
         private sealed class FakeMetadataService : IMetadataService

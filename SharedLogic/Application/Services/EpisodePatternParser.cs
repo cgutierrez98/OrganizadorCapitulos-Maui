@@ -17,7 +17,7 @@ namespace organizadorCapitulos.Application.Services
         private static readonly Regex _spanishPattern =
             new(@"(?:Temp|Temporada)[.\s_-]?(\d{1,2})[.\s_-]+(?:Cap|Capitulo)[.\s_-]?(\d{1,3})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex _absoluteNumberPattern =
-            new(@"[.\s_-]+(\d{2,4})[.\s_-]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new(@"(?<=[.\s_-])(\d{2,4})(?=[.\s_-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex _extensionPattern =
             new(@"\.(mkv|mp4|avi|wmv|flv|webm|mpeg|mov)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -114,11 +114,17 @@ namespace organizadorCapitulos.Application.Services
             }
 
             // Pattern 5: Absolute episode number fallback (e.g., "Series - 150 -" for anime)
-            match = _absoluteNumberPattern.Match(filename);
-            if (match.Success)
+            var containsYear = TryExtractYear(filename, out var year);
+            foreach (Match absoluteMatch in _absoluteNumberPattern.Matches(filename))
             {
+                var absoluteEpisode = int.Parse(absoluteMatch.Groups[1].Value);
+                if (containsYear && absoluteEpisode == year)
+                {
+                    continue;
+                }
+
                 season = 1;
-                episode = int.Parse(match.Groups[1].Value);
+                episode = absoluteEpisode;
                 return true;
             }
 
