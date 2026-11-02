@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,8 +7,18 @@ namespace OrganizadorCapitulos.Maui.Services
 {
     public class AppSettings
     {
+        /// <summary>TMDB API key, stored encrypted (DPAPI) on Windows; plain text fallback on other platforms.</summary>
         public string TmdbApiKey { get; set; } = "";
+
         public string Theme { get; set; } = "light";
+
+        // Future optional settings can be added here with a default value; older settings.json files
+        // will deserialize correctly because JsonIgnore(WhenWritingDefault) omits them on save.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public string? DefaultOutputFolder { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public string? FileNameTemplate { get; set; }
     }
 
     public class SettingsService
@@ -15,7 +26,11 @@ namespace OrganizadorCapitulos.Maui.Services
         private readonly string _settingsPath;
         private readonly SemaphoreSlim _saveLock = new(1, 1);
         private AppSettings _settings = new();
-        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
+        private static readonly JsonSerializerOptions _jsonOptions = new()
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
 
         public SettingsService(string? settingsDirectory = null)
         {
@@ -38,10 +53,10 @@ namespace OrganizadorCapitulos.Maui.Services
 
         public string TmdbApiKey
         {
-            get => _settings.TmdbApiKey;
+            get => DecryptApiKey(_settings.TmdbApiKey);
             set
             {
-                _settings.TmdbApiKey = value;
+                _settings.TmdbApiKey = EncryptApiKey(value);
                 _ = SaveSettingsAsync();
             }
         }
@@ -54,6 +69,73 @@ namespace OrganizadorCapitulos.Maui.Services
                 _settings.Theme = value;
                 _ = SaveSettingsAsync();
             }
+        }
+
+        public string? DefaultOutputFolder
+        {
+            get => _settings.DefaultOutputFolder;
+            set
+            {
+                _settings.DefaultOutputFolder = string.IsNullOrWhiteSpace(value) ? null : value;
+                _ = SaveSettingsAsync();
+            }
+        }
+
+        public string? FileNameTemplate
+        {
+            get => _settings.FileNameTemplate;
+            set
+            {
+                _settings.FileNameTemplate = string.IsNullOrWhiteSpace(value) ? null : value;
+                _ = SaveSettingsAsync();
+            }
+        }
+
+        // ── DPAPI helpers ─────────────────────────────────────────────────────
+        private const string DpapiPrefix = "DPAPI:";
+
+        private static string EncryptApiKey(string plainText)
+        {
+            if (string.IsNullOrEmpty(plainText)) return "";
+#if WINDOWS
+            try
+            {
+                var data = System.Text.Encoding.UTF8.GetBytes(plainText);
+                var encrypted = System.Security.Cryptography.ProtectedData.Protect(
+                    data, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+                return DpapiPrefix + Convert.ToBase64String(encrypted);
+            }
+            catch
+            {
+                // Fallback: store plain text if DPAPI is unavailable
+                return plainText;
+            }
+#else
+            return plainText;
+#endif
+        }
+
+        private static string DecryptApiKey(string stored)
+        {
+            if (string.IsNullOrEmpty(stored)) return "";
+#if WINDOWS
+            if (stored.StartsWith(DpapiPrefix, StringComparison.Ordinal))
+            {
+                try
+                {
+                    var encrypted = Convert.FromBase64String(stored.Substring(DpapiPrefix.Length));
+                    var decrypted = System.Security.Cryptography.ProtectedData.Unprotect(
+                        encrypted, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+                    return System.Text.Encoding.UTF8.GetString(decrypted);
+                }
+                catch
+                {
+                    return ""; // Cannot decrypt; return empty rather than exposing garbage
+                }
+            }
+#endif
+            // Legacy plain-text value or non-Windows: return as-is
+            return stored;
         }
 
         private void LoadSettings()

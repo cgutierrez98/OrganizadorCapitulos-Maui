@@ -32,6 +32,9 @@ namespace OrganizadorCapitulos.Maui.Models
         private string _episodeTitle = "";
 
         [ObservableProperty]
+        private int _year;
+
+        [ObservableProperty]
         private bool _isSelected;
 
         public bool HasMetadata => !string.IsNullOrEmpty(SeriesTitle);

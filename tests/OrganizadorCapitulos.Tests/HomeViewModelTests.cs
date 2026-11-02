@@ -141,6 +141,8 @@ namespace OrganizadorCapitulos.Tests
 
             public Task<List<SeriesSearchResult>> SearchSeriesAsync(string query, CancellationToken ct = default) => Task.FromResult(new List<SeriesSearchResult>());
 
+            public Task<List<MovieSearchResult>> SearchMoviesAsync(string query, CancellationToken ct = default) => Task.FromResult(new List<MovieSearchResult>());
+
             public Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode, CancellationToken ct = default) => Task.FromResult<string?>(null);
 
             public Task<(int season, int episode, string title)?> FindEpisodeByTitleAsync(int seriesId, string title, CancellationToken ct = default) => Task.FromResult<(int season, int episode, string title)?>(null);

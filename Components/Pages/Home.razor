@@ -101,11 +101,43 @@
 
         <!-- Utility Actions (collapsed) -->
         <div class="action-group action-group-utility">
-            <div class="utility-dropdown">
-                <button type="button" class="btn btn-ghost action-chip" 
-                    title="Más acciones" aria-label="Menú de utilidades" aria-haspopup="true">
+            <div class="utility-dropdown @(showMoreMenu ? "open" : "")">
+                <button type="button" class="btn btn-ghost action-chip"
+                    @onclick="() => showMoreMenu = !showMoreMenu"
+                    title="Más acciones" aria-label="Menú de utilidades" aria-haspopup="true"
+                    aria-expanded="@showMoreMenu">
                     ⋮ Más
                 </button>
+                @if (showMoreMenu)
+                {
+                    <div class="utility-dropdown-menu" role="menu" @onclick="() => showMoreMenu = false">
+                        <button type="button" class="dropdown-item" role="menuitem"
+                            disabled="@(!ViewModel.Files.Any(f => f.Status == organizadorCapitulos.Core.Enums.FileStatus.Analyzed) || ViewModel.IsProcessing)"
+                            @onclick="() => ViewModel.RenameAllCommand.Execute(null)">
+                            ✨ Renombrar seleccionados
+                        </button>
+                        <button type="button" class="dropdown-item" role="menuitem"
+                            disabled="@(!ViewModel.Files.Any(f => f.Status == organizadorCapitulos.Core.Enums.FileStatus.Error))"
+                            @onclick="() => ClearErrors()">
+                            🗑️ Limpiar errores
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <button type="button" class="dropdown-item" role="menuitem"
+                            @onclick="() => ViewModel.ExportSessionCommand.Execute(null)"
+                            disabled="@(!ViewModel.Files.Any())">
+                            📤 Exportar sesión
+                        </button>
+                        <button type="button" class="dropdown-item" role="menuitem"
+                            @onclick="() => ViewModel.ShowImportSessionCommand.Execute(null)">
+                            📥 Importar sesión
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <button type="button" class="dropdown-item" role="menuitem"
+                            @onclick="() => ViewModel.OpenOperationLogCommand.Execute(null)">
+                            📋 Ver historial
+                        </button>
+                    </div>
+                }
             </div>
 
             <button type="button" class="btn btn-ghost action-chip-icon"
@@ -244,12 +276,15 @@
             <div class="panel-header panel-header-rich">
                 <div>
                     <span class="panel-kicker">Edición</span>
-                    <h2 id="details-title" class="panel-title">Detalles del capítulo</h2>
+                    <h2 id="details-title" class="panel-title">
+                        @(ViewModel.CurrentMode == RenameMode.Movie ? "Detalles de la película" : "Detalles del capítulo")
+                    </h2>
                 </div>
                 <span class="panel-meta">@(ViewModel.SelectedFile is null ? "Sin selección" : "Archivo activo")</span>
             </div>
             <div class="panel-content panel-content-form">
                 <DetailsForm SelectedFile="@ViewModel.SelectedFile"
+                    SelectedMode="@ViewModel.CurrentMode"
                     OnChange="@(() => ViewModel.UpdatePreviewForFileCommand.Execute(null))" />
                 <StrategySelector SelectedMode="@ViewModel.CurrentMode"
                     OnModeChanged="@((m) => ViewModel.ChangeModeCommand.Execute(m))" />
@@ -259,11 +294,63 @@
 
     <div class="status-bar" aria-live="polite">
         <span>@ViewModel.StatusMessage</span>
-        <span>Actualizado @DateTime.Now.ToString("HH:mm")</span>
     </div>
 </div>
 
 @* Dialogs *@
+@if (ViewModel.ShowingLoadConfirm)
+{
+    <div class="modal-backdrop fade show" aria-hidden="true"></div>
+    <div class="modal d-block" tabindex="-1" role="dialog" aria-labelledby="confirm-load-title" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirm-load-title">⚠️ Archivos ya cargados</h5>
+                </div>
+                <div class="modal-body">
+                    <p>Ya hay <strong>@ViewModel.Files.Count archivo@(ViewModel.Files.Count != 1 ? "s" : "")</strong> cargados. ¿Deseas reemplazarlos con los nuevos?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => ViewModel.CancelLoadFoldersCommand.Execute(null)">Cancelar</button>
+                    <button type="button" class="btn btn-primary" @onclick="() => ViewModel.ConfirmLoadFoldersCommand.Execute(null)">Sí, reemplazar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ViewModel.ShowingDryRun)
+{
+    <div class="modal-backdrop fade show" aria-hidden="true"></div>
+    <div class="modal d-block" tabindex="-1" role="dialog" aria-labelledby="dryrun-title" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="dryrun-title">🔍 Vista previa del renombrado</h5>
+                </div>
+                <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm table-bordered">
+                        <thead><tr><th>Nombre original</th><th>Nuevo nombre</th></tr></thead>
+                        <tbody>
+                            @foreach (var (original, preview) in ViewModel.DryRunPreview)
+                            {
+                                <tr>
+                                    <td class="text-muted small">@original</td>
+                                    <td class="fw-semibold small">@preview</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => ViewModel.CancelDryRunCommand.Execute(null)">Cancelar</button>
+                    <button type="button" class="btn btn-success" @onclick="() => ViewModel.ConfirmDryRunCommand.Execute(null)">✨ Confirmar y renombrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (ViewModel.ShowingFolderBrowser)
 {
     <FolderBrowserDialog IsSingleSelectionMode="false"
@@ -278,8 +365,11 @@
 
 @if (ViewModel.ShowingTmdbSearch)
 {
-    <TmdbSearchDialog Files="@ViewModel.Files" OnSeriesSelected="@((s) => ViewModel.ApplySeriesMetadataCommand.Execute(s))"
-        OnClose="() => ViewModel.CloseTmdbSearchCommand.Execute(null)" />
+    <TmdbSearchDialog Files="@ViewModel.Files"
+                      CurrentMode="@ViewModel.CurrentMode"
+                      SelectedFile="@ViewModel.SelectedFile"
+                      OnSeriesSelected="@((s) => ViewModel.ApplySeriesMetadataCommand.Execute(s))"
+                      OnClose="() => ViewModel.CloseTmdbSearchCommand.Execute(null)" />
 }
 
 @if (ViewModel.ShowingSaveAll)
@@ -295,6 +385,7 @@
 
 @code {
     private bool showShortcutsTooltip = false;
+    private bool showMoreMenu = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -365,6 +456,13 @@
             : nameWithoutExt;
         
         return truncated + extension;
+    }
+
+    private void ClearErrors()
+    {
+        var errorFiles = ViewModel.Files.Where(f => f.Status == organizadorCapitulos.Core.Enums.FileStatus.Error).ToList();
+        foreach (var file in errorFiles)
+            ViewModel.Files.Remove(file);
     }
 
     public void Dispose()

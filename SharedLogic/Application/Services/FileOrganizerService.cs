@@ -29,15 +29,15 @@ namespace organizadorCapitulos.Application.Services
             return files.ToList();
         }
 
-        public async Task<string> RenameFileAsync(string sourcePath, ChapterInfo chapterInfo, IRenameStrategy strategy, CancellationToken ct = default)
+        public async Task<string> RenameFileAsync(string sourcePath, ChapterInfo chapterInfo, IRenameStrategy strategy, CancellationToken ct = default, string? fileNameTemplate = null)
         {
             if (!chapterInfo.IsValid())
             {
-                throw new ArgumentException("La informaciÃ³n del capÃ­tulo no es vÃ¡lida");
+                throw new ArgumentException("La información del capítulo no es válida");
             }
 
             string extension = Path.GetExtension(sourcePath);
-            string newFileName = chapterInfo.GenerateFileName(extension);
+            string newFileName = chapterInfo.GenerateFileName(extension, fileNameTemplate);
             string? directory = Path.GetDirectoryName(sourcePath);
             if (string.IsNullOrEmpty(directory)) throw new InvalidOperationException("No se pudo obtener el directorio del archivo.");
             string destinationPath = Path.Combine(directory, newFileName);

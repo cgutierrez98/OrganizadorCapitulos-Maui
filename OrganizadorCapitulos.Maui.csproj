@@ -73,14 +73,9 @@
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.8" />
+        <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net9.0-windows'))" />
     </ItemGroup>
 
-    <ItemGroup>
-      <!-- Use local SharedLogic sources instead of referencing the original monorepo project -->
-      <!-- ProjectReference removed intentionally. Compiler will include SharedLogic sources below. -->
-    </ItemGroup>
-
-    <!-- Prevent duplicate Compile items by removing default includes for SharedLogic, then include them explicitly -->
     <ItemGroup>
       <Compile Remove="SharedLogic\**\*.cs" />
       <!-- Exclude test sources from the app build (tests live in the repository but should not be compiled into the app) -->
@@ -88,7 +83,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Compile Include="SharedLogic\**\*.cs" />
+      <ProjectReference Include="SharedLogic\OrganizadorCapitulos.SharedLogic.csproj" />
     </ItemGroup>
 
     <!-- Copy Python AI script to output -->

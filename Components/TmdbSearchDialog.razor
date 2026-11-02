@@ -14,7 +14,11 @@
                 <div class="modal-title-group">
                     <span class="modal-kicker">Catálogo</span>
                     <h5 class="modal-title" id="tmdb-dialog-title">Buscar metadatos en TMDB</h5>
-                    <p class="modal-subtitle">Busca la serie correcta y descarga títulos de episodios para los archivos cargados.</p>
+                    <p class="modal-subtitle">
+                        @(IsMovieSearchMode 
+                            ? "Busca películas o identifícalas en lote, y descarga títulos y años oficiales." 
+                            : "Busca la serie correcta y descarga títulos de episodios para los archivos cargados.")
+                    </p>
                 </div>
                 <button type="button" class="btn-close" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
             </div>
@@ -27,31 +31,92 @@
                 }
                 else
                 {
+                    <!-- Search Type Selector -->
+                    <div class="d-flex justify-content-center mb-3">
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Tipo de búsqueda">
+                            <button type="button" class="btn @(IsMovieSearchMode ? "btn-outline-primary" : "btn-primary")" @onclick="() => SetSearchMode(false)">
+                                <span class="me-1">📺</span> Series de TV
+                            </button>
+                            <button type="button" class="btn @(IsMovieSearchMode ? "btn-primary" : "btn-outline-primary")" @onclick="() => SetSearchMode(true)">
+                                <span class="me-1">🎬</span> Películas
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Search Input -->
                     <div class="input-group mb-3">
                         <input type="text" class="form-control" @bind="SearchQuery" @bind:event="oninput"
-                            @onkeypress="OnKeyPress" placeholder="Nombre de la serie..." aria-label="Buscar serie en TMDB" />
+                            @onkeypress="OnKeyPress" 
+                            placeholder="@(IsMovieSearchMode ? "Nombre de la película..." : "Nombre de la serie...")" 
+                            aria-label="Buscar en TMDB" />
                         <button class="btn btn-primary" @onclick="Search" disabled="@IsSearching" aria-label="Ejecutar búsqueda en TMDB">
                             @(IsSearching ? "Buscando..." : "Buscar")
                         </button>
                     </div>
 
                     <!-- Search Results -->
-                    @if (SearchResults.Any())
+                    @if (IsMovieSearchMode)
                     {
-                        <div class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
-                            @foreach (var series in SearchResults)
-                            {
-                                <button type="button"
-                                    class="list-group-item list-group-item-action @(SelectedSeries?.Id == series.Id ? "active" : "")"
-                                    @onclick="() => SelectSeries(series)">
-                                    <strong>@series.Name</strong>
-                                    @if (!string.IsNullOrEmpty(series.FirstAirDate))
-                                    {
-                                        <span class="text-muted small ms-2">(@series.FirstAirDate)</span>
-                                    }
-                                </button>
-                            }
+                        @if (MovieSearchResults.Any())
+                        {
+                            <div class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
+                                @foreach (var movie in MovieSearchResults)
+                                {
+                                    <button type="button"
+                                        class="list-group-item list-group-item-action @(SelectedMovie?.Id == movie.Id ? "active" : "")"
+                                        @onclick="() => SelectMovie(movie)">
+                                        <strong>@movie.Title</strong>
+                                        @if (!string.IsNullOrEmpty(movie.ReleaseDate))
+                                        {
+                                            <span class="text-muted small ms-2">(@movie.ReleaseDate)</span>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        @if (SearchResults.Any())
+                        {
+                            <div class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
+                                @foreach (var series in SearchResults)
+                                {
+                                    <button type="button"
+                                        class="list-group-item list-group-item-action @(SelectedSeries?.Id == series.Id ? "active" : "")"
+                                        @onclick="() => SelectSeries(series)">
+                                        <strong>@series.Name</strong>
+                                        @if (!string.IsNullOrEmpty(series.FirstAirDate))
+                                        {
+                                            <span class="text-muted small ms-2">(@series.FirstAirDate)</span>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+
+                    @if (!IsMovieSearchMode)
+                    {
+                        <!-- Fetch mode selector -->
+                        <div class="mb-3">
+                            <p class="form-label field-label mb-1">Modo de búsqueda</p>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="fetchMode" id="modeTitleFetch"
+                                    checked="@(!_lookupSeasonEpisode)"
+                                    @onchange="() => _lookupSeasonEpisode = false" />
+                                <label class="form-check-label" for="modeTitleFetch">
+                                    Obtener <strong>título del episodio</strong> (usa temporada/capítulo del nombre del archivo)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="fetchMode" id="modeSeasonFetch"
+                                    checked="@_lookupSeasonEpisode"
+                                    @onchange="() => _lookupSeasonEpisode = true" />
+                                <label class="form-check-label" for="modeSeasonFetch">
+                                    Obtener <strong>temporada y capítulo</strong> (usa el título del episodio del nombre del archivo)
+                                </label>
+                            </div>
                         </div>
                     }
 
@@ -64,11 +129,34 @@
                 }
             </div>
             <div class="modal-footer py-2">
-                <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
-                <button type="button" class="btn btn-success btn-sm" @onclick="FetchEpisodes"
-                    disabled="@(SelectedSeries == null || IsFetching)">
-                    @(IsFetching ? "Descargando..." : "Descargar Títulos")
-                </button>
+                @if (IsMovieSearchMode)
+                {
+                    <button type="button" class="btn btn-info btn-sm me-auto" @onclick="AutoIdentifyMovies" disabled="@IsFetching">
+                        ⚡ Auto-identificar lote
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
+                    @if (SelectedFile != null)
+                    {
+                        <button type="button" class="btn btn-primary btn-sm" @onclick="ApplyToSelectedFile"
+                            disabled="@(SelectedMovie == null || IsFetching)">
+                            Aplicar a selec.
+                        </button>
+                    }
+                    <button type="button" class="btn btn-success btn-sm" @onclick="ApplyToAllFiles"
+                        disabled="@(SelectedMovie == null || IsFetching)">
+                        Aplicar a todos
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
+                    <button type="button" class="btn btn-success btn-sm" @onclick="FetchEpisodes"
+                        disabled="@(SelectedSeries == null || IsFetching)">
+                        @(IsFetching
+                            ? "Procesando..."
+                            : (_lookupSeasonEpisode ? "Obtener Temporada/Capítulo" : "Descargar Títulos"))
+                    </button>
+                }
             </div>
         </div>
     </div>
@@ -79,6 +167,12 @@
     public ObservableCollection<OrganizadorCapitulos.Maui.Models.FileViewModel> Files { get; set; } = new();
 
     [Parameter]
+    public RenameMode CurrentMode { get; set; } = RenameMode.Maintain;
+
+    [Parameter]
+    public OrganizadorCapitulos.Maui.Models.FileViewModel? SelectedFile { get; set; }
+
+    [Parameter]
     public EventCallback<string> OnSeriesSelected { get; set; }
 
     [Parameter]
@@ -86,12 +180,16 @@
 
     private string SearchQuery = "";
     private List<SeriesSearchResult> SearchResults = new();
+    private List<MovieSearchResult> MovieSearchResults = new();
     private SeriesSearchResult? SelectedSeries;
+    private MovieSearchResult? SelectedMovie;
     private string StatusMessage = "";
     private bool IsError = false;
     private bool IsSearching = false;
     private bool IsFetching = false;
     private bool IsConfigured = false;
+    private bool IsMovieSearchMode = false;
+    private bool _lookupSeasonEpisode = false;
 
     protected override void OnInitialized()
     {
@@ -102,6 +200,19 @@
             MetadataService.Configure(apiKey);
         }
         IsConfigured = MetadataService.IsConfigured();
+        IsMovieSearchMode = CurrentMode == RenameMode.Movie;
+    }
+
+    private void SetSearchMode(bool isMovie)
+    {
+        IsMovieSearchMode = isMovie;
+        SearchQuery = "";
+        SearchResults.Clear();
+        MovieSearchResults.Clear();
+        SelectedSeries = null;
+        SelectedMovie = null;
+        StatusMessage = "";
+        IsError = false;
     }
 
     private async Task OnKeyPress(KeyboardEventArgs e)
@@ -119,17 +230,30 @@
         IsSearching = true;
         StatusMessage = "";
         SearchResults.Clear();
+        MovieSearchResults.Clear();
         SelectedSeries = null;
+        SelectedMovie = null;
         StateHasChanged();
 
         try
         {
-            SearchResults = await MetadataService.SearchSeriesAsync(SearchQuery);
-
-            if (!SearchResults.Any())
+            if (IsMovieSearchMode)
             {
-                StatusMessage = "No se encontraron resultados";
-                IsError = false;
+                MovieSearchResults = await MetadataService.SearchMoviesAsync(SearchQuery);
+                if (!MovieSearchResults.Any())
+                {
+                    StatusMessage = "No se encontraron películas";
+                    IsError = false;
+                }
+            }
+            else
+            {
+                SearchResults = await MetadataService.SearchSeriesAsync(SearchQuery);
+                if (!SearchResults.Any())
+                {
+                    StatusMessage = "No se encontraron series de TV";
+                    IsError = false;
+                }
             }
         }
         catch (Exception ex)
@@ -150,12 +274,79 @@
         IsError = false;
     }
 
-    private async Task FetchEpisodes()
+    private void SelectMovie(MovieSearchResult movie)
     {
-        if (SelectedSeries == null) return;
+        SelectedMovie = movie;
+        StatusMessage = $"Película seleccionada: {movie.Title}";
+        IsError = false;
+    }
+
+    private async Task ApplyToSelectedFile()
+    {
+        if (SelectedMovie == null || SelectedFile == null) return;
 
         IsFetching = true;
-        StatusMessage = "Descargando títulos de episodios...";
+        try
+        {
+            SelectedFile.SeriesTitle = SelectedMovie.Title;
+            if (int.TryParse(SelectedMovie.ReleaseDate?.Split('-')[0], out int year))
+            {
+                SelectedFile.Year = year;
+            }
+            SelectedFile.Status = FileStatus.Analyzed;
+
+            StatusMessage = $"Película aplicada a {SelectedFile.OriginalName}.";
+            IsError = false;
+            
+            await OnSeriesSelected.InvokeAsync(SelectedMovie.Title);
+            await Task.Delay(1000);
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            IsError = true;
+            IsFetching = false;
+        }
+    }
+
+    private async Task ApplyToAllFiles()
+    {
+        if (SelectedMovie == null) return;
+
+        IsFetching = true;
+        try
+        {
+            foreach (var file in Files)
+            {
+                file.SeriesTitle = SelectedMovie.Title;
+                if (int.TryParse(SelectedMovie.ReleaseDate?.Split('-')[0], out int year))
+                {
+                    file.Year = year;
+                }
+                file.Status = FileStatus.Analyzed;
+            }
+
+            StatusMessage = "Película aplicada a todos los archivos.";
+            IsError = false;
+
+            await OnSeriesSelected.InvokeAsync(SelectedMovie.Title);
+            await Task.Delay(1000);
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            IsError = true;
+            IsFetching = false;
+        }
+    }
+
+    private async Task AutoIdentifyMovies()
+    {
+        IsFetching = true;
+        StatusMessage = "Auto-identificando películas...";
+        IsError = false;
         StateHasChanged();
 
         try
@@ -170,47 +361,76 @@
                 StatusMessage = $"Procesando [{current}/{total}]: {file.OriginalName}";
                 StateHasChanged();
 
-                bool foundEpisode = false;
+                string queryTitle = EpisodePatternParser.ExtractMovieTitle(file.OriginalName);
+                if (string.IsNullOrWhiteSpace(queryTitle)) continue;
 
-                // Method 1: Try to extract season/episode from filename
-                if (EpisodePatternParser.TryExtractSeasonEpisode(file.OriginalName, out int season, out int episode))
+                var results = await MetadataService.SearchMoviesAsync(queryTitle);
+                if (results != null && results.Any())
                 {
-                    var title = await MetadataService.GetEpisodeTitleAsync(SelectedSeries.Id, season, episode);
-                    if (!string.IsNullOrEmpty(title))
+                    var bestMatch = results.First();
+                    file.SeriesTitle = bestMatch.Title;
+                    
+                    if (int.TryParse(bestMatch.ReleaseDate?.Split('-')[0], out int year))
                     {
-                        file.EpisodeTitle = title;
-                        file.Season = season;
-                        file.Episode = episode;
-                        file.SeriesTitle = SelectedSeries.Name ?? "";
-                        file.Status = FileStatus.Analyzed;
-                        found++;
-                        foundEpisode = true;
+                        file.Year = year;
                     }
-                }
-
-                // Method 2: If no season/episode found, try to find by existing episode title
-                if (!foundEpisode && !string.IsNullOrEmpty(file.EpisodeTitle))
-                {
-                    var result = await MetadataService.FindEpisodeByTitleAsync(SelectedSeries.Id, file.EpisodeTitle);
-                    if (result.HasValue)
+                    else
                     {
-                        file.Season = result.Value.season;
-                        file.Episode = result.Value.episode;
-                        file.EpisodeTitle = result.Value.title;
-                        file.SeriesTitle = SelectedSeries.Name ?? "";
-                        file.Status = FileStatus.Analyzed;
-                        found++;
-                        foundEpisode = true;
+                        EpisodePatternParser.TryExtractYear(file.OriginalName, out int localYear);
+                        file.Year = localYear;
                     }
-                }
 
-                // Method 3: Try extracting title from filename and search by that
-                if (!foundEpisode)
+                    file.Status = FileStatus.Analyzed;
+                    found++;
+                }
+            }
+
+            StatusMessage = $"Completado: {found} películas auto-identificadas de {total} archivos.";
+            
+            await OnSeriesSelected.InvokeAsync("Lote de películas");
+            await Task.Delay(1500);
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+            IsError = true;
+        }
+        finally
+        {
+            IsFetching = false;
+        }
+    }
+
+    private async Task FetchEpisodes()
+    {
+        if (SelectedSeries == null) return;
+
+        IsFetching = true;
+        StatusMessage = _lookupSeasonEpisode
+            ? "Buscando temporada y capítulo por nombre del episodio..."
+            : "Descargando títulos de episodios...";
+        StateHasChanged();
+
+        try
+        {
+            int total = Files.Count;
+            int current = 0;
+            int found = 0;
+
+            foreach (var file in Files)
+            {
+                current++;
+                StatusMessage = $"Procesando [{current}/{total}]: {file.OriginalName}";
+                StateHasChanged();
+
+                if (_lookupSeasonEpisode)
                 {
-                    string possibleTitle = EpisodePatternParser.ExtractPossibleTitle(file.OriginalName);
-                    if (!string.IsNullOrEmpty(possibleTitle))
+                    bool foundEpisode = false;
+
+                    if (!string.IsNullOrEmpty(file.EpisodeTitle))
                     {
-                        var result = await MetadataService.FindEpisodeByTitleAsync(SelectedSeries.Id, possibleTitle);
+                        var result = await MetadataService.FindEpisodeByTitleAsync(SelectedSeries.Id, file.EpisodeTitle);
                         if (result.HasValue)
                         {
                             file.Season = result.Value.season;
@@ -219,15 +439,51 @@
                             file.SeriesTitle = SelectedSeries.Name ?? "";
                             file.Status = FileStatus.Analyzed;
                             found++;
+                            foundEpisode = true;
+                        }
+                    }
+
+                    if (!foundEpisode)
+                    {
+                        string possibleTitle = EpisodePatternParser.ExtractPossibleTitle(file.OriginalName);
+                        if (!string.IsNullOrEmpty(possibleTitle))
+                        {
+                            var result = await MetadataService.FindEpisodeByTitleAsync(SelectedSeries.Id, possibleTitle);
+                            if (result.HasValue)
+                            {
+                                file.Season = result.Value.season;
+                                file.Episode = result.Value.episode;
+                                file.EpisodeTitle = result.Value.title;
+                                file.SeriesTitle = SelectedSeries.Name ?? "";
+                                file.Status = FileStatus.Analyzed;
+                                found++;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if (EpisodePatternParser.TryExtractSeasonEpisode(file.OriginalName, out int season, out int episode))
+                    {
+                        var title = await MetadataService.GetEpisodeTitleAsync(SelectedSeries.Id, season, episode);
+                        if (!string.IsNullOrEmpty(title))
+                        {
+                            file.EpisodeTitle = title;
+                            file.Season = season;
+                            file.Episode = episode;
+                            file.SeriesTitle = SelectedSeries.Name ?? "";
+                            file.Status = FileStatus.Analyzed;
+                            found++;
                         }
                     }
                 }
             }
 
-            StatusMessage = $"Completado: {found} títulos encontrados de {total} archivos";
+            StatusMessage = _lookupSeasonEpisode
+                ? $"Completado: {found} episodios identificados de {total} archivos"
+                : $"Completado: {found} títulos encontrados de {total} archivos";
             IsError = false;
 
-            // Notificar el nombre de la serie
             if (SelectedSeries.Name != null)
             {
                 await OnSeriesSelected.InvokeAsync(SelectedSeries.Name);
@@ -246,6 +502,7 @@
             IsFetching = false;
         }
     }
+
     private async Task Cancel()
     {
         await OnClose.InvokeAsync();

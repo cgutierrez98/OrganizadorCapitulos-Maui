@@ -1,4 +1,5 @@
 @using OrganizadorCapitulos.Maui.Models
+@using organizadorCapitulos.Core.Enums
 
 @if (SelectedFile == null)
 {
@@ -6,44 +7,68 @@
         <div class="empty-state-icon" aria-hidden="true">Editar</div>
         <div class="empty-state-copy">
             <h3>Selecciona un archivo</h3>
-            <p>Cuando elijas un capítulo podrás revisar sus metadatos, el nombre sugerido y la estrategia de renombrado.</p>
+            <p>Cuando elijas una película o capítulo podrás revisar sus metadatos, el nombre sugerido y la estrategia de renombrado.</p>
         </div>
     </div>
 }
 else
 {
     <div class="details-stack">
-        <section class="editor-card">
-            <div class="editor-card-header">
-                <span class="panel-kicker">Metadatos</span>
-                <h3 class="editor-card-title">Información del episodio</h3>
-            </div>
-
-            <div class="field-group">
-                <label class="form-label field-label" for="series-title">Nombre de la serie</label>
-                <input id="series-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
-                    @bind:after="OnChanged" placeholder="Ej: Breaking Bad" />
-            </div>
-
-            <div class="field-grid">
-                <div class="field-group">
-                    <label class="form-label field-label" for="season-number">Temporada</label>
-                    <input id="season-number" type="number" class="form-control" @bind="SelectedFile.Season"
-                        @bind:after="OnChanged" min="1" />
+        @if (SelectedMode == RenameMode.Movie)
+        {
+            <section class="editor-card">
+                <div class="editor-card-header">
+                    <span class="panel-kicker">Metadatos</span>
+                    <h3 class="editor-card-title">Información de la película</h3>
                 </div>
-                <div class="field-group">
-                    <label class="form-label field-label" for="episode-number">Episodio</label>
-                    <input id="episode-number" type="number" class="form-control" @bind="SelectedFile.Episode"
-                        @bind:after="OnChanged" min="1" />
-                </div>
-            </div>
 
-            <div class="field-group">
-                <label class="form-label field-label" for="episode-title">Título del episodio</label>
-                <input id="episode-title" type="text" class="form-control" @bind="SelectedFile.EpisodeTitle"
-                    @bind:after="OnChanged" placeholder="Ej: Pilot (opcional)" />
-            </div>
-        </section>
+                <div class="field-group">
+                    <label class="form-label field-label" for="movie-title">Título de la película</label>
+                    <input id="movie-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
+                        @bind:after="OnChanged" placeholder="Ej: El Padrino" />
+                </div>
+
+                <div class="field-group">
+                    <label class="form-label field-label" for="movie-year">Año de estreno</label>
+                    <input id="movie-year" type="number" class="form-control" @bind="SelectedFile.Year"
+                        @bind:after="OnChanged" placeholder="Ej: 1972" min="1880" max="2100" />
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="editor-card">
+                <div class="editor-card-header">
+                    <span class="panel-kicker">Metadatos</span>
+                    <h3 class="editor-card-title">Información del episodio</h3>
+                </div>
+
+                <div class="field-group">
+                    <label class="form-label field-label" for="series-title">Nombre de la serie</label>
+                    <input id="series-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
+                        @bind:after="OnChanged" placeholder="Ej: Breaking Bad" />
+                </div>
+
+                <div class="field-grid">
+                    <div class="field-group">
+                        <label class="form-label field-label" for="season-number">Temporada</label>
+                        <input id="season-number" type="number" class="form-control" @bind="SelectedFile.Season"
+                            @bind:after="OnChanged" min="1" />
+                    </div>
+                    <div class="field-group">
+                        <label class="form-label field-label" for="episode-number">Episodio</label>
+                        <input id="episode-number" type="number" class="form-control" @bind="SelectedFile.Episode"
+                            @bind:after="OnChanged" min="1" />
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label class="form-label field-label" for="episode-title">Título del episodio</label>
+                    <input id="episode-title" type="text" class="form-control" @bind="SelectedFile.EpisodeTitle"
+                        @bind:after="OnChanged" placeholder="Ej: Pilot (opcional)" />
+                </div>
+            </section>
+        }
 
         <section class="editor-card">
             <div class="editor-card-header">
@@ -72,6 +97,9 @@ else
 @code {
     [Parameter]
     public FileViewModel? SelectedFile { get; set; }
+
+    [Parameter]
+    public RenameMode SelectedMode { get; set; }
 
     [Parameter]
     public EventCallback OnChange { get; set; }

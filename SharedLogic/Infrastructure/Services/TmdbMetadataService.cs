@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -26,16 +26,41 @@ namespace organizadorCapitulos.Infrastructure.Services
 
         public void Configure(string apiKey)
         {
-            _apiKey = apiKey;
+            _apiKey = apiKey?.Trim();
+            if (IsV3Key(_apiKey))
+            {
+                // Clear authorization header for v3 API Key to avoid TMDB 401 response
+                _http.DefaultRequestHeaders.Authorization = null;
+            }
+            else
+            {
+                // Use Authorization header instead of query param for v4 token to avoid key exposure in logs/proxies
+                _http.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
+            }
         }
 
         public bool IsConfigured() => !string.IsNullOrEmpty(_apiKey);
 
-        /// <summary>Builds a URL for TMDB v3, appending the API key as the sole place it appears.</summary>
-        private string BuildUrl(string relativePath) =>
-            relativePath.Contains('?')
-                ? $"{relativePath}&api_key={Uri.EscapeDataString(_apiKey!)}"
-                : $"{relativePath}?api_key={Uri.EscapeDataString(_apiKey!)}";
+        private static bool IsV3Key(string? key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            // TMDB v4 Access Token is a JWT and always starts with "eyJ" (since it encodes JSON).
+            // TMDB v3 API Key is a 32-character hex string and will not start with "eyJ" (neither 'y' nor 'J' are hex).
+            return !key.StartsWith("eyJ", StringComparison.Ordinal);
+        }
+
+        /// <summary>Builds the request URL. Appends api_key for v3 API Keys, otherwise uses header auth.</summary>
+        private string BuildUrl(string relativePath)
+        {
+            if (IsV3Key(_apiKey))
+            {
+                char separator = relativePath.Contains('?') ? '&' : '?';
+                return $"{relativePath}{separator}api_key={_apiKey}";
+            }
+            return relativePath;
+        }
+
 
         public async Task<List<SeriesSearchResult>> SearchSeriesAsync(string query, CancellationToken ct = default)
         {
@@ -66,6 +91,35 @@ namespace organizadorCapitulos.Infrastructure.Services
             return results;
         }
 
+        public async Task<List<MovieSearchResult>> SearchMoviesAsync(string query, CancellationToken ct = default)
+        {
+            if (!IsConfigured()) return new List<MovieSearchResult>();
+            if (string.IsNullOrWhiteSpace(query)) return new List<MovieSearchResult>();
+
+            string url = BuildUrl($"search/movie?query={Uri.EscapeDataString(query)}&language=es-ES");
+            using var resp = await _http.GetAsync(url, ct);
+            if (!resp.IsSuccessStatusCode) return new List<MovieSearchResult>();
+
+            using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            var results = new List<MovieSearchResult>();
+            if (doc.RootElement.TryGetProperty("results", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in arr.EnumerateArray())
+                {
+                    results.Add(new MovieSearchResult
+                    {
+                        Id = item.GetProperty("id").GetInt32(),
+                        Title = item.GetProperty("title").GetString() ?? string.Empty,
+                        Overview = item.TryGetProperty("overview", out var ov) ? ov.GetString() ?? string.Empty : string.Empty,
+                        ReleaseDate = item.TryGetProperty("release_date", out var rd) ? rd.GetString() : null
+                    });
+                }
+            }
+
+            return results;
+        }
+
         public async Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode, CancellationToken ct = default)
         {
             if (!IsConfigured()) return null;
@@ -85,9 +139,13 @@ namespace organizadorCapitulos.Infrastructure.Services
 
             var allEpisodes = await GetOrFetchAllEpisodesAsync(seriesId, ct);
 
+            // Bidirectional match: TMDB title contains query, OR query contains TMDB title.
+            // The second branch handles formats like "Series Title Episode Title S01E50"
+            // where the extracted query is longer than the TMDB episode title.
             var match = allEpisodes.FirstOrDefault(e =>
                 !string.IsNullOrWhiteSpace(e.title) &&
-                e.title.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0);
+                (e.title.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 title.IndexOf(e.title, StringComparison.OrdinalIgnoreCase) >= 0));
 
             return match == default ? null : match;
         }

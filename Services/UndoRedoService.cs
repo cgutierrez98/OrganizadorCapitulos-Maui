@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using organizadorCapitulos.Core.Interfaces.Repositories;
 
@@ -19,6 +20,8 @@ namespace OrganizadorCapitulos.Maui.Services
         private readonly IFileRepository _fileRepository;
         private readonly Stack<List<RenameOperation>> _undoStack = new();
         private readonly Stack<List<RenameOperation>> _redoStack = new();
+        private readonly string _persistPath;
+        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
@@ -29,6 +32,44 @@ namespace OrganizadorCapitulos.Maui.Services
         public UndoRedoService(IFileRepository fileRepository)
         {
             _fileRepository = fileRepository;
+            var appFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "OrganizadorCapitulos");
+            Directory.CreateDirectory(appFolder);
+            _persistPath = Path.Combine(appFolder, "undo_history.json");
+        }
+
+        public async Task LoadHistoryAsync()
+        {
+            if (!File.Exists(_persistPath)) return;
+            try
+            {
+                using var stream = File.OpenRead(_persistPath);
+                var batches = await JsonSerializer.DeserializeAsync<List<List<RenameOperation>>>(stream, _jsonOptions);
+                if (batches == null) return;
+                // Restore in original order: first pushed = bottom of stack, so push reversed
+                foreach (var batch in batches)
+                    _undoStack.Push(batch);
+            }
+            catch
+            {
+                // Corrupt file — start fresh
+            }
+        }
+
+        private async Task SaveHistoryAsync()
+        {
+            try
+            {
+                // Stack enumerates top-first; reverse to store in push order
+                var batches = _undoStack.Reverse().ToList();
+                using var stream = File.Create(_persistPath);
+                await JsonSerializer.SerializeAsync(stream, batches, _jsonOptions);
+            }
+            catch
+            {
+                // Non-critical — ignore persistence failures
+            }
         }
 
         public void RecordOperation(string oldPath, string newPath)
@@ -45,6 +86,7 @@ namespace OrganizadorCapitulos.Maui.Services
             {
                 _undoStack.Push(operations);
                 _redoStack.Clear();
+                _ = SaveHistoryAsync();
             }
         }
 
@@ -77,6 +119,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 if (applied.Count > 0)
                     _redoStack.Push(forRedo);
 
+                await SaveHistoryAsync();
                 return (true, $"Deshecho: {applied.Count} archivo(s)", applied.Count, applied);
             }
             catch (Exception ex)
@@ -113,6 +156,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 if (redone.Count > 0)
                     _undoStack.Push(redone);
 
+                await SaveHistoryAsync();
                 return (true, $"Rehecho: {redone.Count} archivo(s)", redone.Count, redone);
             }
             catch (Exception ex)

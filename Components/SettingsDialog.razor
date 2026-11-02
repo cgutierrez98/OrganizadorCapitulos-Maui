@@ -24,6 +24,16 @@
                     </div>
                 </div>
 
+                <div class="field-group mt-3 mb-0">
+                    <label class="form-label field-label" for="filename-template">Formato de nombre de archivo</label>
+                    <input type="text" class="form-control" @bind="FileNameTemplate"
+                        id="filename-template" placeholder="{Season}{Episode} - {Title}" />
+                    <div class="form-text">
+                        Usa <code>{Season}</code>, <code>{Episode}</code>, <code>{Title}</code>, <code>{EpisodeTitle}</code>.
+                        Deja vacío para usar el formato por defecto.
+                    </div>
+                </div>
+
                 @if (!string.IsNullOrEmpty(StatusMessage))
                 {
                     <div class="alert @(IsSuccess ? "alert-success" : "alert-danger") py-2 small">
@@ -44,6 +54,7 @@
     public EventCallback OnClose { get; set; }
 
     private string ApiKey = "";
+    private string FileNameTemplate = "";
     private string StatusMessage = "";
     private bool IsSuccess = false;
 
@@ -51,6 +62,7 @@
     {
         // Load saved API key from settings
         ApiKey = Settings.TmdbApiKey;
+        FileNameTemplate = Settings.FileNameTemplate ?? "";
 
         // If there's a saved key, configure the service
         if (!string.IsNullOrEmpty(ApiKey))
@@ -72,6 +84,7 @@
         {
             // Save to JSON file
             Settings.TmdbApiKey = ApiKey;
+            Settings.FileNameTemplate = string.IsNullOrWhiteSpace(FileNameTemplate) ? null : FileNameTemplate.Trim();
 
             // Configure the service
             MetadataService.Configure(ApiKey);

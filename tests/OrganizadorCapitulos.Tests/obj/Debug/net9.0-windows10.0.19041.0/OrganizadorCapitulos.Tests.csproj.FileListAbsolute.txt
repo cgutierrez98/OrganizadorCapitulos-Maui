@@ -98,3 +98,8 @@ C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos
 C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\obj\Debug\net9.0-windows10.0.19041.0\OrganizadorCapitulos.Tests.pdb
 C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\obj\Debug\net9.0-windows10.0.19041.0\OrganizadorCapitulos.Tests.genruntimeconfig.cache
 C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\obj\Debug\net9.0-windows10.0.19041.0\ref\OrganizadorCapitulos.Tests.dll
+C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\bin\Debug\net9.0-windows10.0.19041.0\System.Security.Cryptography.ProtectedData.dll
+C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\bin\Debug\net9.0-windows10.0.19041.0\.msCoverageSourceRootsMapping_OrganizadorCapitulos.Tests
+C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\bin\Debug\net9.0-windows10.0.19041.0\CoverletSourceRootsMapping
+C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\bin\Debug\net9.0-windows10.0.19041.0\OrganizadorCapitulos.SharedLogic.dll
+C:\Users\carlo\source\repos\OrganizadorCapitulos-Maui\tests\OrganizadorCapitulos.Tests\bin\Debug\net9.0-windows10.0.19041.0\OrganizadorCapitulos.SharedLogic.pdb

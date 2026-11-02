@@ -23,8 +23,50 @@ namespace organizadorCapitulos.Application.Services
             new(@"\.(mkv|mp4|avi|wmv|flv|webm|mpeg|mov)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex _titleAfterCodePattern =
             new(@"(?:[Ss]\d+[Ee]\d+|\d+x\d+)[.\s_-]+([^.\d][^.]+?)(?:\s+\d+p|\s+[Ww]eb|\s+[Hh]d|\s+[Bb]lu|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        // Captures text BEFORE the S##E##/##x## code (e.g. "Title Name S01E05" → "Title Name")
+        private static readonly Regex _titleBeforeCodePattern =
+            new(@"^(.*?)\s+(?:[Ss]\d{1,2}[Ee]\d{1,3}|\d{1,2}x\d{2,3})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex _qualityTagPattern =
             new(@"\b(1080p|720p|480p|WEB-DL|WEBDL|WEBRip|BluRay|HDTV|x264|x265|HEVC|AAC|AC3|DUAL|MULTI|Spa|Eng|Sub)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex _yearPattern =
+            new(@"\b((?:19|20)\d{2})\b", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Attempts to extract a 4-digit year (1900-2100) from a filename.
+        /// </summary>
+        public static bool TryExtractYear(string filename, out int year)
+        {
+            year = 0;
+            var matches = _yearPattern.Matches(filename);
+            foreach (Match match in matches)
+            {
+                if (int.TryParse(match.Groups[1].Value, out int y) && y >= 1900 && y <= 2100)
+                {
+                    year = y;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Attempts to extract a movie title from a filename.
+        /// </summary>
+        public static string ExtractMovieTitle(string filename)
+        {
+            filename = _extensionPattern.Replace(filename, "");
+            filename = _yearPattern.Replace(filename, "");
+
+            string cleaned = filename.Replace("_", " ").Replace(".", " ");
+            cleaned = _qualityTagPattern.Replace(cleaned, "");
+
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\(\s*\)", "");
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\[\s*\]", "");
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s*-\s*", " ");
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s{2,}", " ").Trim().Trim('-').Trim();
+
+            return cleaned;
+        }
 
         /// <summary>
         /// Attempts to extract season and episode numbers from a filename using multiple patterns.
@@ -97,6 +139,13 @@ namespace organizadorCapitulos.Application.Services
             if (match.Success && match.Groups[1].Value.Length > 2)
             {
                 return match.Groups[1].Value.Replace("_", " ").Replace(".", " ").Trim();
+            }
+
+            // Try to find title before S##E##/##x## code (e.g. "Title Name S01E05")
+            var beforeMatch = _titleBeforeCodePattern.Match(filename);
+            if (beforeMatch.Success && beforeMatch.Groups[1].Value.Length > 2)
+            {
+                return beforeMatch.Groups[1].Value.Replace("_", " ").Replace(".", " ").Trim();
             }
 
             // Clean underscores and dots, then strip quality tags

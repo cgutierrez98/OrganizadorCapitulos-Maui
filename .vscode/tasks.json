@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Windows Application",
+			"type": "shell",
+			"command": "dotnet build -t:Run -f net9.0-windows10.0.19041.0",
+			"group": "build"
+		},
+		{
+			"label": "Run Windows Application (Targeted)",
+			"type": "shell",
+			"command": "dotnet build OrganizadorCapitulos.Maui.csproj -t:Run -f net9.0-windows10.0.19041.0",
+			"group": "build"
+		}
+	]
+}

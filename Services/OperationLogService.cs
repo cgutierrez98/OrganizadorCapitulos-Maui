@@ -41,8 +41,9 @@ namespace OrganizadorCapitulos.Maui.Services
                 Directory.CreateDirectory(appFolder);
 
             _logPath = Path.Combine(appFolder, "operations.log.json");
-            _ = Task.Run(async () => await LoadLogAsync().ConfigureAwait(false));
         }
+
+        public Task InitializeAsync() => LoadLogAsync();
 
         public void LogRename(string oldPath, string newPath, bool success = true, string? error = null)
         {

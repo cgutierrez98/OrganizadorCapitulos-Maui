@@ -112,5 +112,30 @@ namespace OrganizadorCapitulos.Tests
 
             Assert.DoesNotContain(".mkv", title, System.StringComparison.OrdinalIgnoreCase);
         }
+
+        // ── Year and Movie Extraction ────────────────────────────────────────
+
+        [Theory]
+        [InlineData("Inception.2010.1080p.BluRay.mkv", 2010)]
+        [InlineData("The Matrix (1999) [1080p].mp4", 1999)]
+        [InlineData("interstellar.2014.avi", 2014)]
+        public void TryExtractYear_HasYear_ExtractsYearCorrectly(string filename, int expectedYear)
+        {
+            var result = EpisodePatternParser.TryExtractYear(filename, out var year);
+
+            Assert.True(result);
+            Assert.Equal(expectedYear, year);
+        }
+
+        [Theory]
+        [InlineData("Inception.2010.1080p.BluRay.mkv", "Inception")]
+        [InlineData("The Matrix (1999) [1080p].mp4", "The Matrix")]
+        [InlineData("interstellar.2014.avi", "interstellar")]
+        public void ExtractMovieTitle_HasYearAndTags_StripsAndExtractsTitle(string filename, string expectedTitle)
+        {
+            var title = EpisodePatternParser.ExtractMovieTitle(filename);
+
+            Assert.Equal(expectedTitle, title, ignoreCase: true);
+        }
     }
 }

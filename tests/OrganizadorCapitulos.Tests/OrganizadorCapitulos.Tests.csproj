@@ -18,6 +18,7 @@
     <PackageReference Include="xunit" Version="2.4.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,29 +28,12 @@
     <Compile Include="..\..\Services\UndoRedoService.cs" Link="App\Services\UndoRedoService.cs" />
     <Compile Include="..\..\Services\OperationLogService.cs" Link="App\Services\OperationLogService.cs" />
     <Compile Include="..\..\Services\Interfaces\IThemeService.cs" Link="App\Services\Interfaces\IThemeService.cs" />
-    <Compile Include="..\..\SharedLogic\Application\Services\FileOrganizerService.cs" Link="SharedLogic\Application\Services\FileOrganizerService.cs" />
-    <Compile Include="..\..\SharedLogic\Application\Services\EpisodePatternParser.cs" Link="SharedLogic\Application\Services\EpisodePatternParser.cs" />
-    <Compile Include="..\..\SharedLogic\Application\Strategies\*.cs" Link="SharedLogic\Application\Strategies\%(Filename)%(Extension)" />
-    <Compile Include="..\..\SharedLogic\Infrastructure\Repositories\FileRepository.cs" Link="SharedLogic\Infrastructure\Repositories\FileRepository.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Entities\*.cs" Link="SharedLogic\Core\Entities\%(Filename)%(Extension)" />
-    <Compile Include="..\..\SharedLogic\Core\Enums\FileStatus.cs" Link="SharedLogic\Core\Enums\FileStatus.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Enums\RenameMode.cs" Link="SharedLogic\Core\Enums\RenameMode.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Interfaces\IRenameStrategy.cs" Link="SharedLogic\Core\Interfaces\IRenameStrategy.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Interfaces\Observers\IProgressObserver.cs" Link="SharedLogic\Core\Interfaces\Observers\IProgressObserver.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Interfaces\Repositories\IFileRepository.cs" Link="SharedLogic\Core\Interfaces\Repositories\IFileRepository.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Interfaces\Services\IAIService.cs" Link="SharedLogic\Core\Interfaces\Services\IAIService.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Interfaces\Services\IMetadataService.cs" Link="SharedLogic\Core\Interfaces\Services\IMetadataService.cs" />
-    <Compile Include="..\..\SharedLogic\Core\Exceptions\*.cs" Link="SharedLogic\Core\Exceptions\%(Filename)%(Extension)" />
     <Compile Include="..\..\Services\Interfaces\IDragDropService.cs" Link="App\Services\Interfaces\IDragDropService.cs" />
     <Compile Include="..\..\Services\DragDropService.cs" Link="App\Services\DragDropService.cs" />
   </ItemGroup>
-  <!--
-    NOTE: Compiling the full SharedLogic tree into the test assembly causes Windows native
-    initializers (Microsoft.WindowsAppRuntime) and MAUI platform code to be pulled in,
-    which breaks `dotnet test` on developer machines that don't have the Windows App
-    Runtime installed. For now we avoid compiling SharedLogic here and keep tests
-    focused and self-contained. If you want to test SharedLogic, extract it into a
-    separate class library (non-MAUI) and reference that library from the tests.
-  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SharedLogic\OrganizadorCapitulos.SharedLogic.csproj" />
+  </ItemGroup>
 
 </Project>

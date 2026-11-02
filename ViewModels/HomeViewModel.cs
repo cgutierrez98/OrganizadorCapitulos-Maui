@@ -3,8 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 using System.Threading;
 using organizadorCapitulos.Application.Services;
-using organizadorCapitulos.Application.Strategies;
-using organizadorCapitulos.Core.Entities;
+using organizadorCapitulos.Application.Strategies;using organizadorCapitulos.Core.Entities;
 using organizadorCapitulos.Core.Enums;
 using organizadorCapitulos.Core.Interfaces.Services;
 using OrganizadorCapitulos.Maui.Models;
@@ -32,7 +31,6 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         private CancellationTokenSource? _operationCts;
 
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(FilteredFiles))]
         [NotifyPropertyChangedFor(nameof(FileCounts))]
         [NotifyPropertyChangedFor(nameof(AnalyzedCount))]
         [NotifyPropertyChangedFor(nameof(PendingCount))]
@@ -79,16 +77,13 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [ObservableProperty]
         private bool _isDragging;
 
-        public bool IsNotProcessing => !IsProcessing;
-
-        // Filter properties
+        // FEAT-06: dry-run preview gate
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(FilteredFiles))]
-        private FileStatus? _currentFilter = null; // null = All
+        private bool _showingDryRun;
+        private List<(string original, string preview)> _dryRunPreview = new();
+        public IReadOnlyList<(string original, string preview)> DryRunPreview => _dryRunPreview;
 
-        public IEnumerable<FileViewModel> FilteredFiles => CurrentFilter.HasValue
-            ? Files.Where(f => f.Status == CurrentFilter.Value)
-            : Files;
+        public bool IsNotProcessing => !IsProcessing;
 
         public string FileCounts => $"{Files.Count} total | {AnalyzedCount} listos";
         public int AnalyzedCount => Files.Count(f => f.Status == FileStatus.Analyzed);
@@ -156,7 +151,33 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
         private async void OnFoldersDropped(IReadOnlyList<string> folders)
         {
-            await LoadFoldersAsync(new System.Collections.Generic.List<string>(folders));
+            try
+            {
+                await LoadFoldersAsync(new System.Collections.Generic.List<string>(folders));
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error al cargar carpetas: {ex.Message}";
+            }
+        }
+
+        [ObservableProperty]
+        private bool _showingLoadConfirm;
+
+        private List<string> _pendingFoldersToLoad = new();
+
+        [RelayCommand]
+        private void ConfirmLoadFolders()
+        {
+            ShowingLoadConfirm = false;
+            _ = LoadFoldersInternalAsync(_pendingFoldersToLoad);
+        }
+
+        [RelayCommand]
+        private void CancelLoadFolders()
+        {
+            ShowingLoadConfirm = false;
+            _pendingFoldersToLoad = new();
         }
 
         [RelayCommand]
@@ -171,6 +192,18 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             ShowingFolderBrowser = false;
             if (!folders.Any()) return;
 
+            if (Files.Count > 0)
+            {
+                _pendingFoldersToLoad = folders;
+                ShowingLoadConfirm = true;
+                return;
+            }
+
+            await LoadFoldersInternalAsync(folders);
+        }
+
+        private async Task LoadFoldersInternalAsync(List<string> folders)
+        {
             IsProcessing = true;
             UpdateProgress("Cargando archivos...", 0, 1);
 
@@ -189,9 +222,11 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     });
                 }
 
+                // Auto-analyze with local parser (FEAT-01)
+                AutoAnalyzeWithLocalParser();
+
                 StatusMessage = $"Carga completada: {Files.Count} archivos de video encontrados";
                 OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(FilteredFiles));
             }
             catch (Exception ex)
             {
@@ -261,13 +296,11 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
                 StatusMessage = $"Análisis completado: {Files.Count(f => f.Status == FileStatus.Analyzed)} archivos analizados";
                 OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(FilteredFiles));
             }
             catch (OperationCanceledException)
             {
                 StatusMessage = "Análisis cancelado";
                 OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(FilteredFiles));
             }
             finally
             {
@@ -318,6 +351,31 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 }
             }
 
+            // Validate: in Movie mode, every file must have a title
+            if (CurrentMode == RenameMode.Movie)
+            {
+                var invalid = filesToRename.Where(f => string.IsNullOrWhiteSpace(f.SeriesTitle)).ToList();
+                if (invalid.Any())
+                {
+                    StatusMessage = $"Error: {invalid.Count} película(s) sin título de película asignado. Corrígelos antes de renombrar.";
+                    return;
+                }
+            }
+
+            // FEAT-06: Show dry-run confirmation before executing
+            _dryRunPreview = filesToRename
+                .Select(f => (f.OriginalName, string.IsNullOrEmpty(f.NewName) ? "(sin vista previa)" : f.NewName))
+                .ToList();
+            ShowingDryRun = true;
+        }
+
+        [RelayCommand]
+        private async Task ConfirmDryRunAsync()
+        {
+            ShowingDryRun = false;
+            var filesToRename = Files.Where(f => f.Status == FileStatus.Analyzed).ToList();
+            if (!filesToRename.Any()) return;
+
             _operationCts?.Cancel();
             _operationCts?.Dispose();
             _operationCts = new CancellationTokenSource();
@@ -347,13 +405,11 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
                 StatusMessage = $"Renombrado completado: {Files.Count(f => f.Status == FileStatus.Done)} archivos";
                 OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(FilteredFiles));
             }
             catch (OperationCanceledException)
             {
                 StatusMessage = "Renombrado cancelado";
                 OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(FilteredFiles));
             }
             finally
             {
@@ -364,7 +420,10 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             }
         }
 
-        public async Task RenameFileAsync(FileViewModel file)
+        [RelayCommand]
+        private void CancelDryRun() => ShowingDryRun = false;
+
+        private async Task RenameFileAsync(FileViewModel file)
         {
             try
             {
@@ -375,7 +434,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     Title = file.SeriesTitle,
                     Season = file.Season,
                     Episode = file.Episode,
-                    EpisodeTitle = file.EpisodeTitle
+                    EpisodeTitle = file.EpisodeTitle,
+                    Year = file.Year
                 };
 
                 if (CurrentMode == RenameMode.Maintain && _maintainSeriesTitle != null)
@@ -387,7 +447,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 }
 
                 var strategy = _strategyFactory.CreateStrategy(CurrentMode);
-                var newPath = await _fileOrganizerService.RenameFileAsync(oldPath, chapterInfo, strategy);
+                var newPath = await _fileOrganizerService.RenameFileAsync(oldPath, chapterInfo, strategy, fileNameTemplate: _settingsService.FileNameTemplate);
 
                 _undoRedoService.RecordOperation(oldPath, newPath);
 
@@ -400,6 +460,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 file.SeriesTitle = chapterInfo.Title;
                 file.Season = chapterInfo.Season;
                 file.Episode = chapterInfo.Episode;
+                file.Year = chapterInfo.Year;
             }
             catch (Exception ex)
             {
@@ -474,7 +535,6 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
                 // Refresh file list state
                 OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(FilteredFiles));
             }
             finally
             {
@@ -529,11 +589,12 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     Title = file.SeriesTitle,
                     Season = file.Season,
                     Episode = file.Episode,
-                    EpisodeTitle = file.EpisodeTitle
+                    EpisodeTitle = file.EpisodeTitle,
+                    Year = file.Year
                 };
 
-                var extension = Path.GetExtension(file.OriginalName);
-                file.NewName = chapterInfo.GenerateFileName(extension);
+                var strategy = _strategyFactory.CreateStrategy(CurrentMode);
+                file.NewName = strategy.GetNewFileName(file.OriginalName, chapterInfo);
             }
             catch
             {
@@ -577,6 +638,75 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [RelayCommand] private void CloseSaveAll() => ShowingSaveAll = false;
         [RelayCommand] private void OpenOperationLog() => ShowingOperationLog = true;
         [RelayCommand] private void CloseOperationLog() => ShowingOperationLog = false;
+
+        // FEAT-04: Export session
+        [RelayCommand]
+        private async Task ExportSessionAsync()
+        {
+            if (!Files.Any()) return;
+            try
+            {
+                var exportData = Files.Select(f => new
+                {
+                    f.OriginalName,
+                    f.SeriesTitle,
+                    f.Season,
+                    f.Episode,
+                    f.EpisodeTitle,
+                    Status = f.Status.ToString()
+                }).ToList();
+                var json = System.Text.Json.JsonSerializer.Serialize(exportData, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                var exportPath = Path.Combine(desktopPath, $"session_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+                await File.WriteAllTextAsync(exportPath, json);
+                StatusMessage = $"Sesión exportada a: {exportPath}";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error exportando sesión: {ex.Message}";
+            }
+        }
+
+        // FEAT-04: Show import session (placeholder — full WinUI picker would require MAUI app context)
+        [RelayCommand]
+        private async Task ShowImportSessionAsync()
+        {
+            // A full picker implementation requires the WinUI window handle, which is only available
+            // in the running app context. For now, guide the user to use drag-and-drop.
+            StatusMessage = "Importación: arrastre un archivo .json de sesión exportada sobre la ventana";
+            await Task.CompletedTask;
+        }
+
+        private async Task ImportSessionFromJsonAsync(string json)
+        {
+            try
+            {
+                var items = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(json);
+                if (items == null) return;
+                Files.Clear();
+                foreach (var item in items)
+                {
+                    var file = new FileViewModel
+                    {
+                        OriginalName = item.TryGetProperty("OriginalName", out var p) ? p.GetString() ?? "" : "",
+                        SeriesTitle = item.TryGetProperty("SeriesTitle", out var s) ? s.GetString() ?? "" : "",
+                        Season = item.TryGetProperty("Season", out var sea) ? sea.GetInt32() : 1,
+                        Episode = item.TryGetProperty("Episode", out var ep) ? ep.GetInt32() : 1,
+                        EpisodeTitle = item.TryGetProperty("EpisodeTitle", out var et) ? et.GetString() ?? "" : "",
+                        FullPath = item.TryGetProperty("OriginalName", out var fp2) ? fp2.GetString() ?? "" : ""
+                    };
+                    if (Enum.TryParse<FileStatus>(item.TryGetProperty("Status", out var st) ? st.GetString() : null, out var status))
+                        file.Status = status;
+                    Files.Add(file);
+                }
+                StatusMessage = $"Sesión importada: {Files.Count} archivos";
+                await Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error leyendo sesión: {ex.Message}";
+            }
+        }
 
         [RelayCommand]
         private async Task MoveFilesAsync(List<string> folders)
@@ -647,6 +777,45 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             ProgressTotal = total;
         }
 
+        /// <summary>
+        /// FEAT-01: Runs EpisodePatternParser on every Pending file immediately after loading.
+        /// Files that match a pattern are marked as Analyzed so the user can rename without AI.
+        /// </summary>
+        private void AutoAnalyzeWithLocalParser()
+        {
+            int autoAnalyzed = 0;
+            foreach (var file in Files.Where(f => f.Status == FileStatus.Pending))
+            {
+                if (EpisodePatternParser.TryExtractSeasonEpisode(file.OriginalName, out int season, out int episode))
+                {
+                    file.Season = season;
+                    file.Episode = episode;
+                    file.SeriesTitle = EpisodePatternParser.ExtractPossibleTitle(file.OriginalName);
+                    file.Status = FileStatus.Analyzed;
+                    UpdatePreviewForFile(file);
+                    autoAnalyzed++;
+                }
+                else if (EpisodePatternParser.TryExtractYear(file.OriginalName, out int year))
+                {
+                    file.Year = year;
+                    file.SeriesTitle = EpisodePatternParser.ExtractMovieTitle(file.OriginalName);
+                    file.Season = 0;
+                    file.Episode = 0;
+                    file.EpisodeTitle = string.Empty;
+                    file.Status = FileStatus.Analyzed;
+                    UpdatePreviewForFile(file);
+                    autoAnalyzed++;
+                }
+            }
+            if (autoAnalyzed > 0)
+            {
+                StatusMessage = $"Carga completada: {Files.Count} archivos ({autoAnalyzed} auto-analizados localmente)";
+                OnPropertyChanged(nameof(FileCounts));
+                OnPropertyChanged(nameof(AnalyzedCount));
+                OnPropertyChanged(nameof(PendingCount));
+            }
+        }
+
         private void ApplyFilePathChanges(IEnumerable<RenameOperation> operations, bool isCompletedOperation)
         {
             foreach (var operation in operations)
@@ -675,7 +844,6 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             }
 
             OnPropertyChanged(nameof(FileCounts));
-            OnPropertyChanged(nameof(FilteredFiles));
         }
     }
 }

@@ -15,6 +15,15 @@
                 <button type="button" class="btn-close" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
             </div>
             <div class="modal-body p-0" style="height: 400px; overflow-y: auto;">
+                @if (_loadingDrives)
+                {
+                    <div class="d-flex align-items-center justify-content-center h-100">
+                        <div class="spinner-border spinner-border-sm text-secondary me-2" role="status" aria-hidden="true"></div>
+                        <span class="text-muted small">Cargando unidades...</span>
+                    </div>
+                }
+                else
+                {
                 <div class="list-group list-group-flush">
                     @foreach (var drive in Drives)
                     {
@@ -22,6 +31,7 @@
                             OnSelectionChanged="OnSelectionChanged" IsSingleMode="@IsSingleSelectionMode" />
                     }
                 </div>
+                }
             </div>
             <div class="modal-footer py-2 d-flex justify-content-between">
                 <span class="text-muted small">
@@ -51,29 +61,29 @@
 
     private List<string> Drives = new();
     private HashSet<string> SelectedFolders = new();
+    private bool _loadingDrives = true;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        // Cargar las unidades disponibles
-        try
+        await Task.Run(() =>
         {
-            Drives = DriveInfo.GetDrives()
-            .Where(d => d.IsReady)
-            .Select(d => d.Name)
-            .ToList();
-        }
-        catch
-        {
-            // Fallback por plataforma: en Windows usar C:\, en otras plataformas usar raiz '/'
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            try
             {
-                Drives = new List<string> { "C:\\" };
+                Drives = DriveInfo.GetDrives()
+                    .Where(d => d.IsReady)
+                    .Select(d => d.Name)
+                    .ToList();
             }
-            else
+            catch
             {
-                Drives = new List<string> { "/" };
+                // Fallback por plataforma: en Windows usar C:\, en otras plataformas usar raiz '/'
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    Drives = new List<string> { "C:\\" };
+                else
+                    Drives = new List<string> { "/" };
             }
-        }
+        });
+        _loadingDrives = false;
     }
 
     private void OnSelectionChanged((string path, bool isSelected) args)

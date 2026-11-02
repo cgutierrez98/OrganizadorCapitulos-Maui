@@ -54,7 +54,16 @@ public static class MauiProgram
         // Singleton HomeViewModel: one instance per app session
         builder.Services.AddSingleton<HomeViewModel>();
 
-        return builder.Build();
+        var app = builder.Build();
+
+        // Initialize OperationLogService before the UI starts to avoid the race condition
+        // where the user performs operations before the persisted log is loaded.
+        app.Services.GetRequiredService<OperationLogService>().InitializeAsync().GetAwaiter().GetResult();
+
+        // Restore undo history from previous session
+        app.Services.GetRequiredService<UndoRedoService>().LoadHistoryAsync().GetAwaiter().GetResult();
+
+        return app;
     }
 }
 

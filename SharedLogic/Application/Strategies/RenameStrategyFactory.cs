@@ -7,7 +7,13 @@ namespace organizadorCapitulos.Application.Strategies
     {
         public IRenameStrategy CreateStrategy(Core.Enums.RenameMode mode)
         {
-            return mode == Core.Enums.RenameMode.Maintain ? (IRenameStrategy)new MaintainStrategy() : new ChangeStrategy();
+            return mode switch
+            {
+                Core.Enums.RenameMode.Maintain => new MaintainStrategy(),
+                Core.Enums.RenameMode.Change => new ChangeStrategy(),
+                Core.Enums.RenameMode.Movie => new MovieStrategy(),
+                _ => new ChangeStrategy()
+            };
         }
     }
 }

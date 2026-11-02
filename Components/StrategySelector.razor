@@ -26,6 +26,15 @@
                 <small>Conserva el número detectado y aplica una nueva composición del nombre.</small>
             </span>
         </label>
+
+        <label class="strategy-option @(SelectedMode == RenameMode.Movie ? "active" : "")" for="modeMovie">
+            <input class="strategy-input" type="radio" name="strategyMode" id="modeMovie"
+                checked="@(SelectedMode == RenameMode.Movie)" @onchange="@(() => SelectMode(RenameMode.Movie))">
+            <span class="strategy-copy">
+                <strong>Modo Película</strong>
+                <small>Permite editar y renombrar películas usando Título y Año.</small>
+            </span>
+        </label>
     </fieldset>
 </section>
 

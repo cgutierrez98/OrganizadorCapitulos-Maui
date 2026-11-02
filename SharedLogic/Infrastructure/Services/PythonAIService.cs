@@ -11,6 +11,8 @@ namespace organizadorCapitulos.Infrastructure.Services
 {
     public class PythonAIService : IAIService
     {
+        private bool? _available;
+
         private string? FindScriptPath()
         {
             var baseDir = AppContext.BaseDirectory ?? Environment.CurrentDirectory;
@@ -30,10 +32,11 @@ namespace organizadorCapitulos.Infrastructure.Services
 
         public bool IsAvailable()
         {
+            if (_available.HasValue) return _available.Value;
             try
             {
                 var script = FindScriptPath();
-                if (script == null) return false;
+                if (script == null) { _available = false; return false; }
                 var psi = new ProcessStartInfo("python")
                 {
                     RedirectStandardOutput = true,
@@ -44,16 +47,19 @@ namespace organizadorCapitulos.Infrastructure.Services
                 psi.ArgumentList.Add("--version");
 
                 using var p = Process.Start(psi);
-                if (p == null) return false;
+                if (p == null) { _available = false; return false; }
                 if (!p.WaitForExit(2000))
                 {
                     try { p.Kill(true); } catch { }
+                    _available = false;
                     return false;
                 }
-                return p.ExitCode == 0;
+                _available = p.ExitCode == 0;
+                return _available.Value;
             }
             catch
             {
+                _available = false;
                 return false;
             }
         }

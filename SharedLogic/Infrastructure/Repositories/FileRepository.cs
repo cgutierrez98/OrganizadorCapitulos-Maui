@@ -24,13 +24,20 @@ namespace organizadorCapitulos.Infrastructure.Repositories
                     ct.ThrowIfCancellationRequested();
                     try
                     {
-                        var folderFiles = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories)
+                        var enumOptions = new EnumerationOptions
+                        {
+                            RecurseSubdirectories = true,
+                            IgnoreInaccessible = true,
+                            AttributesToSkip = FileAttributes.ReparsePoint
+                        };
+                        var folderFiles = Directory.EnumerateFiles(folder, "*.*", enumOptions)
                             .Where(file => extensions.Contains(Path.GetExtension(file).ToLower()));
                         allFiles.AddRange(folderFiles);
                     }
                     catch (System.Exception ex)
                     {
-                        throw new DirectoryAccessException($"Error al acceder a {folder}", folder, ex);
+                        // Log and continue with remaining folders instead of aborting
+                        System.Diagnostics.Debug.WriteLine($"[FileRepository] Error al acceder a {folder}: {ex.Message}");
                     }
                 }
                 return allFiles;
