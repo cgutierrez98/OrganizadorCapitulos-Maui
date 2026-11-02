@@ -277,7 +277,7 @@ namespace OrganizadorCapitulos.Tests
 
         private sealed class FakeThemeService : IThemeService
         {
-            public event Action<bool>? ThemeChanged;
+            public event Action<bool>? ThemeChanged { add { } remove { } }
 
             public bool IsDarkTheme => false;
 
