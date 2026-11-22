@@ -176,6 +176,30 @@ public class TmdbMetadataServiceTests
         Assert.Equal(v4Token, capturedRequest.Headers.Authorization.Parameter);
     }
 
+    [Fact]
+    public async Task FindEpisodeByTitleAsync_MatchesIgnoringAccentsAndPunctuation()
+    {
+        var handler = new CallbackHttpMessageHandler(req =>
+        {
+            string body = req.RequestUri!.AbsolutePath.EndsWith("/season/1")
+                ? """{"episodes":[{"episode_number":3,"name":"El Día Después: Parte 1"}]}"""
+                : """{"number_of_seasons":1}""";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        });
+        var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.themoviedb.org/3/") };
+        var svc = new TmdbMetadataService(client);
+        svc.Configure("fake-api-key");
+
+        var match = await svc.FindEpisodeByTitleAsync(100, "el dia despues parte 1");
+
+        Assert.NotNull(match);
+        Assert.Equal(1, match.Value.season);
+        Assert.Equal(3, match.Value.episode);
+    }
+
     private class CallbackHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _callback;

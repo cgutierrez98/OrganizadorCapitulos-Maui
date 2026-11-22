@@ -7,7 +7,7 @@
         <div class="empty-state-icon" aria-hidden="true">Editar</div>
         <div class="empty-state-copy">
             <h3>Selecciona un archivo</h3>
-            <p>Cuando elijas una película o capítulo podrás revisar sus metadatos, el nombre sugerido y la estrategia de renombrado.</p>
+            <p>Cuando elijas una película o capítulo podrás revisar sus metadatos, aplicar cambios en lote y elegir la estrategia de renombrado.</p>
         </div>
     </div>
 }
@@ -23,7 +23,9 @@ else
                 </div>
 
                 <div class="field-group">
-                    <label class="form-label field-label" for="movie-title">Título de la película</label>
+                    <div class="field-label-row">
+                        <label class="form-label field-label mb-0" for="movie-title">Título de la película</label>
+                    </div>
                     <input id="movie-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
                         @bind:after="OnChanged" placeholder="Ej: El Padrino" />
                 </div>
@@ -44,19 +46,43 @@ else
                 </div>
 
                 <div class="field-group">
-                    <label class="form-label field-label" for="series-title">Nombre de la serie</label>
+                    <div class="field-label-row">
+                        <label class="form-label field-label mb-0" for="series-title">Nombre de la serie</label>
+                        @if (!string.IsNullOrWhiteSpace(SelectedFile.SeriesTitle))
+                        {
+                            <button type="button" class="btn-apply-batch"
+                                @onclick="() => OnApplySeriesTitleToAll.InvokeAsync(SelectedFile.SeriesTitle)"
+                                title="Aplicar este nombre de serie a todos los archivos marcados">
+                                Aplicar a todos
+                            </button>
+                        }
+                    </div>
                     <input id="series-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
                         @bind:after="OnChanged" placeholder="Ej: Breaking Bad" />
                 </div>
 
                 <div class="field-grid">
                     <div class="field-group">
-                        <label class="form-label field-label" for="season-number">Temporada</label>
+                        <div class="field-label-row">
+                            <label class="form-label field-label mb-0" for="season-number">Temporada</label>
+                            <button type="button" class="btn-apply-batch"
+                                @onclick="() => OnApplySeasonToAll.InvokeAsync(SelectedFile.Season)"
+                                title="Aplicar esta temporada a todos los archivos marcados">
+                                A todos
+                            </button>
+                        </div>
                         <input id="season-number" type="number" class="form-control" @bind="SelectedFile.Season"
-                            @bind:after="OnChanged" min="1" />
+                            @bind:after="OnChanged" min="0" />
                     </div>
                     <div class="field-group">
-                        <label class="form-label field-label" for="episode-number">Episodio</label>
+                        <div class="field-label-row">
+                            <label class="form-label field-label mb-0" for="episode-number">Episodio</label>
+                            <button type="button" class="btn-apply-batch"
+                                @onclick="() => OnRenumberFromEpisode.InvokeAsync(Math.Max(1, SelectedFile.Episode))"
+                                title="Renumerar todos los archivos marcados secuencialmente desde este episodio">
+                                Secuencial
+                            </button>
+                        </div>
                         <input id="episode-number" type="number" class="form-control" @bind="SelectedFile.Episode"
                             @bind:after="OnChanged" min="1" />
                     </div>
@@ -104,8 +130,21 @@ else
     [Parameter]
     public EventCallback OnChange { get; set; }
 
+    [Parameter]
+    public EventCallback<string> OnApplySeriesTitleToAll { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnApplySeasonToAll { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnRenumberFromEpisode { get; set; }
+
     private async Task OnChanged()
     {
+        if (SelectedFile != null && SelectedFile.Status == FileStatus.Pending && !string.IsNullOrWhiteSpace(SelectedFile.SeriesTitle))
+        {
+            SelectedFile.Status = FileStatus.Analyzed;
+        }
         await OnChange.InvokeAsync();
     }
 }

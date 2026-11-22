@@ -19,6 +19,12 @@ namespace OrganizadorCapitulos.Maui.Services
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public string? FileNameTemplate { get; set; }
+
+        public string TmdbLanguage { get; set; } = "es-ES";
+
+        public bool OrganizeIntoSubfolders { get; set; } = false;
+
+        public bool RenameCompanionFiles { get; set; } = true;
     }
 
     public class SettingsService
@@ -87,6 +93,36 @@ namespace OrganizadorCapitulos.Maui.Services
             set
             {
                 _settings.FileNameTemplate = string.IsNullOrWhiteSpace(value) ? null : value;
+                _ = SaveSettingsAsync();
+            }
+        }
+
+        public string TmdbLanguage
+        {
+            get => string.IsNullOrWhiteSpace(_settings.TmdbLanguage) ? "es-ES" : _settings.TmdbLanguage;
+            set
+            {
+                _settings.TmdbLanguage = string.IsNullOrWhiteSpace(value) ? "es-ES" : value.Trim();
+                _ = SaveSettingsAsync();
+            }
+        }
+
+        public bool OrganizeIntoSubfolders
+        {
+            get => _settings.OrganizeIntoSubfolders;
+            set
+            {
+                _settings.OrganizeIntoSubfolders = value;
+                _ = SaveSettingsAsync();
+            }
+        }
+
+        public bool RenameCompanionFiles
+        {
+            get => _settings.RenameCompanionFiles;
+            set
+            {
+                _settings.RenameCompanionFiles = value;
                 _ = SaveSettingsAsync();
             }
         }

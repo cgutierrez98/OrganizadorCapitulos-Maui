@@ -37,6 +37,9 @@ namespace OrganizadorCapitulos.Maui.Models
         [ObservableProperty]
         private bool _isSelected;
 
+        [ObservableProperty]
+        private bool _isChecked = true;
+
         public bool HasMetadata => !string.IsNullOrEmpty(SeriesTitle);
     }
 }

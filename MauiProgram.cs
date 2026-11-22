@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using CommunityToolkit.Maui;
 using Microsoft.Maui.LifecycleEvents;
 using organizadorCapitulos.Application.Services;
@@ -46,7 +46,7 @@ public static class MauiProgram
         builder.Services.AddTransient<FileOrganizerService>();
         builder.Services.AddTransient<RenameStrategyFactory>();
         builder.Services.AddSingleton<IMetadataService, TmdbMetadataService>(_ =>
-            new TmdbMetadataService(new System.Net.Http.HttpClient()));
+            new TmdbMetadataService(new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) }));
         builder.Services.AddTransient<IAIService, PythonAIService>();
         // ThemeService must be a singleton so ViewModels (singletons) observe the same instance
         builder.Services.AddSingleton<IThemeService, ThemeService>();
@@ -54,16 +54,7 @@ public static class MauiProgram
         // Singleton HomeViewModel: one instance per app session
         builder.Services.AddSingleton<HomeViewModel>();
 
-        var app = builder.Build();
-
-        // Initialize OperationLogService before the UI starts to avoid the race condition
-        // where the user performs operations before the persisted log is loaded.
-        app.Services.GetRequiredService<OperationLogService>().InitializeAsync().GetAwaiter().GetResult();
-
-        // Restore undo history from previous session
-        app.Services.GetRequiredService<UndoRedoService>().LoadHistoryAsync().GetAwaiter().GetResult();
-
-        return app;
+        return builder.Build();
     }
 }
 

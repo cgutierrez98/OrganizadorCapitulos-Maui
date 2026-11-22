@@ -8,6 +8,7 @@ namespace organizadorCapitulos.Core.Interfaces.Services
     public interface IMetadataService
     {
         void Configure(string apiKey);
+        void ConfigureLanguage(string language) { }
         bool IsConfigured();
         Task<List<SeriesSearchResult>> SearchSeriesAsync(string query, CancellationToken ct = default);
         Task<List<MovieSearchResult>> SearchMoviesAsync(string query, CancellationToken ct = default);

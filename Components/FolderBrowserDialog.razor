@@ -12,7 +12,7 @@
                     <h5 class="modal-title" id="folder-browser-title">Seleccionar carpetas</h5>
                     <p class="modal-subtitle">Explora las unidades disponibles y elige las carpetas que contienen los videos.</p>
                 </div>
-                <button type="button" class="btn-close" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
+                <button type="button" class="btn-close" data-shortcut="escape" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
             </div>
             <div class="modal-body p-0" style="height: 400px; overflow-y: auto;">
                 @if (_loadingDrives)

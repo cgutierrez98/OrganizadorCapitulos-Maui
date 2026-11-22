@@ -1,49 +1,98 @@
+@using organizadorCapitulos.Core.Entities
 @inject organizadorCapitulos.Core.Interfaces.Services.IMetadataService MetadataService
 @inject OrganizadorCapitulos.Maui.Services.SettingsService Settings
 
 <div class="modal fade show d-block modal-backdrop-themed" tabindex="-1" role="dialog" aria-modal="true"
     aria-labelledby="settings-dialog-title">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header py-2">
                 <div class="modal-title-group">
-                    <span class="modal-kicker">Integración</span>
+                    <span class="modal-kicker">Preferencias</span>
                     <h5 class="modal-title" id="settings-dialog-title">Configuración</h5>
-                    <p class="modal-subtitle">Define la conexión con TMDB para completar títulos y metadatos.</p>
+                    <p class="modal-subtitle">Personaliza plantillas de renombrado, organización en carpetas e integración con TMDB.</p>
                 </div>
-                <button type="button" class="btn-close" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
+                <button type="button" class="btn-close" data-shortcut="escape" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
             </div>
-            <div class="modal-body">
-                <div class="field-group mb-0">
-                    <label class="form-label field-label" for="tmdb-api-key">API Key de TMDB</label>
-                    <input type="password" class="form-control" @bind="ApiKey"
-                        id="tmdb-api-key" placeholder="Ingresa tu API Key de TMDB" />
-                    <div class="form-text">
-                        Obtén tu API Key gratis en
-                        <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>
+            <div class="modal-body d-flex flex-column gap-3">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <div class="field-group mb-0">
+                            <label class="form-label field-label" for="tmdb-api-key">API Key / Token de TMDB (opcional)</label>
+                            <input type="password" class="form-control" @bind="ApiKey"
+                                id="tmdb-api-key" placeholder="API Key v3 o Token Bearer v4" />
+                            <div class="form-text">
+                                Obtén tu clave gratuita en
+                                <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="field-group mb-0">
+                            <label class="form-label field-label" for="tmdb-language">Idioma TMDB</label>
+                            <select id="tmdb-language" class="form-select" @bind="TmdbLanguage">
+                                <option value="es-ES">Español (España)</option>
+                                <option value="es-MX">Español (Latinoamérica)</option>
+                                <option value="en-US">Inglés (EE. UU.)</option>
+                                <option value="fr-FR">Francés</option>
+                                <option value="de-DE">Alemán</option>
+                                <option value="ja-JP">Japonés</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
-                <div class="field-group mt-3 mb-0">
-                    <label class="form-label field-label" for="filename-template">Formato de nombre de archivo</label>
-                    <input type="text" class="form-control" @bind="FileNameTemplate"
-                        id="filename-template" placeholder="{Season}{Episode} - {Title}" />
-                    <div class="form-text">
-                        Usa <code>{Season}</code>, <code>{Episode}</code>, <code>{Title}</code>, <code>{EpisodeTitle}</code>.
-                        Deja vacío para usar el formato por defecto.
+                <div class="field-group mb-0">
+                    <label class="form-label field-label" for="filename-template">Plantilla de nombre de archivo</label>
+                    <input type="text" class="form-control" @bind="FileNameTemplate" @bind:event="oninput"
+                        id="filename-template" placeholder="{Title} - {Season}{Episode} - {EpisodeTitle}" />
+                    <div class="template-chips mt-2" role="group" aria-label="Variables disponibles">
+                        @foreach (var token in AvailableTokens)
+                        {
+                            <button type="button" class="template-chip" @onclick="() => InsertToken(token)">
+                                + @token
+                            </button>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(FileNameTemplate))
+                        {
+                            <button type="button" class="template-chip template-chip-reset" @onclick="() => FileNameTemplate = string.Empty">
+                                Restablecer
+                            </button>
+                        }
+                    </div>
+                    <div class="template-preview mt-2">
+                        <span class="small text-muted">Vista previa:</span>
+                        <code>@GetTemplatePreview()</code>
+                    </div>
+                </div>
+
+                <div class="settings-toggles">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="rename-companions" @bind="RenameCompanionFiles" />
+                        <label class="form-check-label" for="rename-companions">
+                            <strong>Renombrar subtítulos acompañantes</strong>
+                            <span class="d-block small text-muted">Renombra y mueve automáticamente archivos .srt, .ass, .vtt y .nfo con el mismo nombre base.</span>
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="organize-subfolders" @bind="OrganizeIntoSubfolders" />
+                        <label class="form-check-label" for="organize-subfolders">
+                            <strong>Organizar en subcarpetas al mover (Plex / Jellyfin)</strong>
+                            <span class="d-block small text-muted">Crea automáticamente carpetas como <code>Serie/Temporada 01/</code> o <code>Película (Año)/</code>.</span>
+                        </label>
                     </div>
                 </div>
 
                 @if (!string.IsNullOrEmpty(StatusMessage))
                 {
-                    <div class="alert @(IsSuccess ? "alert-success" : "alert-danger") py-2 small">
+                    <div class="alert @(IsSuccess ? "alert-success" : "alert-danger") py-2 small mb-0">
                         @StatusMessage
                     </div>
                 }
             </div>
             <div class="modal-footer py-2">
                 <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
-                <button type="button" class="btn btn-primary btn-sm" @onclick="Save">Guardar</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Save">Guardar cambios</button>
             </div>
         </div>
     </div>
@@ -53,46 +102,76 @@
     [Parameter]
     public EventCallback OnClose { get; set; }
 
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private static readonly string[] AvailableTokens = ["{Title}", "{Season}", "{Episode}", "{EpisodeTitle}", "{Year}"];
+
     private string ApiKey = "";
+    private string TmdbLanguage = "es-ES";
     private string FileNameTemplate = "";
+    private bool OrganizeIntoSubfolders = false;
+    private bool RenameCompanionFiles = true;
     private string StatusMessage = "";
     private bool IsSuccess = false;
 
     protected override void OnInitialized()
     {
-        // Load saved API key from settings
         ApiKey = Settings.TmdbApiKey;
+        TmdbLanguage = Settings.TmdbLanguage;
         FileNameTemplate = Settings.FileNameTemplate ?? "";
+        OrganizeIntoSubfolders = Settings.OrganizeIntoSubfolders;
+        RenameCompanionFiles = Settings.RenameCompanionFiles;
+    }
 
-        // If there's a saved key, configure the service
-        if (!string.IsNullOrEmpty(ApiKey))
+    private void InsertToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(FileNameTemplate))
         {
-            MetadataService.Configure(ApiKey);
+            FileNameTemplate = token;
         }
+        else if (FileNameTemplate.EndsWith(" ") || FileNameTemplate.EndsWith("-"))
+        {
+            FileNameTemplate += token;
+        }
+        else
+        {
+            FileNameTemplate += " " + token;
+        }
+    }
+
+    private string GetTemplatePreview()
+    {
+        var sample = new ChapterInfo
+        {
+            Title = "Breaking Bad",
+            Season = 1,
+            Episode = 1,
+            EpisodeTitle = "Pilot",
+            Year = 2008
+        };
+        return sample.GenerateFileName(".mkv", string.IsNullOrWhiteSpace(FileNameTemplate) ? null : FileNameTemplate.Trim());
     }
 
     private async Task Save()
     {
-        if (string.IsNullOrWhiteSpace(ApiKey))
-        {
-            StatusMessage = "Por favor ingresa una API Key válida";
-            IsSuccess = false;
-            return;
-        }
-
         try
         {
-            // Save to JSON file
-            Settings.TmdbApiKey = ApiKey;
+            Settings.TmdbApiKey = ApiKey.Trim();
+            Settings.TmdbLanguage = TmdbLanguage;
             Settings.FileNameTemplate = string.IsNullOrWhiteSpace(FileNameTemplate) ? null : FileNameTemplate.Trim();
+            Settings.OrganizeIntoSubfolders = OrganizeIntoSubfolders;
+            Settings.RenameCompanionFiles = RenameCompanionFiles;
 
-            // Configure the service
-            MetadataService.Configure(ApiKey);
+            MetadataService.Configure(ApiKey.Trim());
+            MetadataService.ConfigureLanguage(TmdbLanguage);
 
+            await OnSaved.InvokeAsync();
             StatusMessage = "Configuración guardada correctamente";
             IsSuccess = true;
+            StateHasChanged();
 
-            await Task.Delay(1000);
+            await Task.Delay(500);
             await OnClose.InvokeAsync();
         }
         catch (Exception ex)

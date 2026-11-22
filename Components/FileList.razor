@@ -3,8 +3,22 @@
 @using System.Collections.ObjectModel
 
 <div class="file-list-shell">
-    <!-- Unified Toolbar: Filters + Sort + View Mode -->
+    <!-- Unified Toolbar: Search + Filters + Sort + View Mode -->
     <div class="file-list-toolbar" role="toolbar" aria-label="Controles de lista">
+        <div class="file-search-row">
+            @if (Files.Any())
+            {
+                <label class="select-all-toggle" title="Marcar o desmarcar todos los archivos">
+                    <input type="checkbox" checked="@AllChecked" @onchange="OnToggleAll" aria-label="Seleccionar todos los archivos" />
+                    <span class="small">@Files.Count(f => f.IsChecked)/@Files.Count</span>
+                </label>
+            }
+            <input type="search" class="form-control form-control-sm file-search-input"
+                @bind="SearchText" @bind:event="oninput"
+                placeholder="Filtrar por nombre, serie o vista previa..."
+                aria-label="Filtrar archivos" />
+        </div>
+
         <div class="filter-pills" role="group" aria-label="Filtros de archivos">
             <button type="button" class="filter-pill @(CurrentFilter == null ? "active" : "")" @onclick='() => SetFilter(null)'
                 aria-pressed="@(CurrentFilter == null)" title="Mostrar todos los archivos">
@@ -33,73 +47,91 @@
                 <button type="button" @onclick='() => SortBy("Name")'
                     class="sort-button @(SortColumn == "Name" ? "active" : "")"
                     aria-label="Ordenar por nombre" title="Ordenar por nombre">
-                    📄 @(SortColumn == "Name" ? (SortAscending ? "↑" : "↓") : "")
+                    Nombre @(SortColumn == "Name" ? (SortAscending ? "↑" : "↓") : "")
                 </button>
                 <button type="button" @onclick='() => SortBy("Status")'
                     class="sort-button @(SortColumn == "Status" ? "active" : "")"
                     aria-label="Ordenar por estado" title="Ordenar por estado">
-                    🏷️ @(SortColumn == "Status" ? (SortAscending ? "↑" : "↓") : "")
+                    Estado @(SortColumn == "Status" ? (SortAscending ? "↑" : "↓") : "")
                 </button>
             </div>
             <button type="button" class="view-mode-toggle" @onclick="ToggleViewMode"
                 aria-label="@(IsCompactView ? "Cambiar a vista detallada" : "Cambiar a vista compacta")"
                 title="@(IsCompactView ? "Vista detallada" : "Vista compacta")">
-                @(IsCompactView ? "📋" : "📑")
+                @(IsCompactView ? "Detallada" : "Compacta")
             </button>
         </div>
     </div>
 
-    @if (!FilteredFiles.Any())
+    @{
+        var visibleFiles = FilteredFiles.ToList();
+        var duplicatePreviews = GetDuplicatePreviews();
+    }
+
+    @if (!visibleFiles.Any())
     {
         <div class="empty-state">
             <div class="empty-state-icon" aria-hidden="true">📂</div>
             <div class="empty-state-copy">
                 <h3>@(Files.Any() ? "No hay archivos para este filtro" : "Aún no has cargado carpetas")</h3>
-                <p>@(Files.Any() ? "Prueba con otro estado o cambia el orden para encontrar el archivo que buscas." : "Empieza cargando una o varias carpetas para ver los capítulos aquí.")</p>
+                <p>@(Files.Any() ? "Prueba limpiando la búsqueda o cambiando el filtro de estado." : "Carga carpetas con el botón superior o arrastra carpetas directamente a esta ventana.")</p>
             </div>
         </div>
     }
     else
     {
-        <div class="file-items @(IsCompactView ? "file-items-compact" : "")" role="list" aria-label="Resultados de archivos (@FilteredFiles.Count() archivo@(FilteredFiles.Count() != 1 ? "s" : ""))" aria-live="polite">
+        <div class="file-items @(IsCompactView ? "file-items-compact" : "")" role="list" aria-label="Resultados de archivos (@visibleFiles.Count archivo@(visibleFiles.Count != 1 ? "s" : ""))" aria-live="polite">
             @{
                 int index = 0;
             }
-            @foreach (var file in FilteredFiles)
+            @foreach (var file in visibleFiles)
             {
-                var animationDelay = $"animation-delay: {index * 30}ms";
+                var delayMs = Math.Min(index, 12) * 20;
+                var animationDelay = $"animation-delay: {delayMs}ms";
+                var hasCollision = !string.IsNullOrEmpty(file.NewName) && duplicatePreviews.Contains(file.NewName);
                 index++;
-                <button type="button" @onclick="() => SelectFile(file)" 
-                    class="file-row @(file.IsSelected ? "row-selected" : "") @GetStatusRowClass(file.Status)"
-                    style="@animationDelay"
-                    aria-pressed="@file.IsSelected" 
-                    aria-label="@GetFileAriaLabel(file)">
-                    
+                <div class="file-row-wrapper @(file.IsSelected ? "row-selected" : "") @(!file.IsChecked ? "row-unchecked" : "") @GetStatusRowClass(file.Status)"
+                     style="@animationDelay" role="listitem">
                     <div class="file-row-status-indicator" aria-hidden="true"></div>
-                    
-                    <div class="file-row-main">
-                        @if (!IsCompactView)
-                        {
-                            <span class="file-row-label">Original</span>
-                        }
-                        <strong class="file-row-name" title="@file.OriginalName">
-                            <span class="file-row-icon">@GetFileIcon(file.Status)</span>
-                            @file.OriginalName
-                        </strong>
-                        
-                        @if (!IsCompactView && !string.IsNullOrEmpty(file.NewName))
-                        {
-                            <span class="file-row-label">→ Vista previa</span>
-                            <code class="file-row-preview" title="@file.NewName">@file.NewName</code>
-                        }
+
+                    <div class="file-row-check">
+                        <input type="checkbox" checked="@file.IsChecked"
+                               @onchange="(e) => ToggleFileChecked(file, e)"
+                               aria-label="Incluir @file.OriginalName en operaciones por lote" />
                     </div>
-                    
-                    <div class="file-row-meta">
-                        <span class="badge @GetBadgeClass(file.Status)">
-                            @GetStatusText(file.Status)
-                        </span>
-                    </div>
-                </button>
+
+                    <button type="button" @onclick="() => SelectFile(file)"
+                        class="file-row-button"
+                        aria-pressed="@file.IsSelected"
+                        aria-label="@GetFileAriaLabel(file)">
+                        <div class="file-row-main">
+                            @if (!IsCompactView)
+                            {
+                                <span class="file-row-label">Original</span>
+                            }
+                            <strong class="file-row-name" title="@file.OriginalName">
+                                <span class="file-row-icon">@GetFileIcon(file.Status)</span>
+                                @file.OriginalName
+                            </strong>
+
+                            @if (!IsCompactView && !string.IsNullOrEmpty(file.NewName))
+                            {
+                                <span class="file-row-label">→ Nuevo nombre</span>
+                                <code class="file-row-preview @(hasCollision ? "preview-collision" : "")" title="@file.NewName">@file.NewName</code>
+                            }
+                        </div>
+
+                        <div class="file-row-meta">
+                            @if (hasCollision)
+                            {
+                                <span class="badge bg-warning text-dark" title="Otro archivo genera el mismo nombre; se añadirá sufijo único">Colisión</span>
+                            }
+                            <span class="badge @GetBadgeClass(file.Status)">
+                                @GetStatusText(file.Status)
+                            </span>
+                        </div>
+                    </button>
+                </div>
             }
         </div>
     }
@@ -112,69 +144,90 @@
     [Parameter]
     public EventCallback<FileViewModel> OnFileSelected { get; set; }
 
+    [Parameter]
+    public EventCallback<bool> OnToggleAllChecked { get; set; }
+
+    [Parameter]
+    public EventCallback OnCheckChanged { get; set; }
+
     private FileStatus? CurrentFilter = null;
+    private string SearchText = "";
     private string SortColumn = "Name";
     private bool SortAscending = true;
     private bool IsCompactView = false;
+
+    private bool AllChecked => Files.Any() && Files.All(f => f.IsChecked);
 
     private IEnumerable<FileViewModel> FilteredFiles
     {
         get
         {
-            var filtered = CurrentFilter.HasValue
-            ? Files.Where(f => f.Status == CurrentFilter.Value)
-            : Files;
+            IEnumerable<FileViewModel> filtered = CurrentFilter.HasValue
+                ? Files.Where(f => f.Status == CurrentFilter.Value)
+                : Files;
+
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                var q = SearchText.Trim();
+                filtered = filtered.Where(f =>
+                    f.OriginalName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    f.SeriesTitle.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    f.NewName.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
 
             return SortColumn switch
             {
                 "Name" => SortAscending
-                ? filtered.OrderBy(f => f.OriginalName)
-                : filtered.OrderByDescending(f => f.OriginalName),
-                "Preview" => SortAscending
-                ? filtered.OrderBy(f => f.NewName)
-                : filtered.OrderByDescending(f => f.NewName),
+                    ? filtered.OrderBy(f => f.OriginalName, StringComparer.OrdinalIgnoreCase)
+                    : filtered.OrderByDescending(f => f.OriginalName, StringComparer.OrdinalIgnoreCase),
                 "Status" => SortAscending
-                ? filtered.OrderBy(f => f.Status)
-                : filtered.OrderByDescending(f => f.Status),
+                    ? filtered.OrderBy(f => f.Status)
+                    : filtered.OrderByDescending(f => f.Status),
                 _ => filtered
             };
         }
     }
 
-    private void SetFilter(FileStatus? filter)
+    private HashSet<string> GetDuplicatePreviews()
     {
-        CurrentFilter = filter;
+        return Files
+            .Where(f => f.IsChecked && !string.IsNullOrWhiteSpace(f.NewName))
+            .GroupBy(f => f.NewName, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+
+    private async Task OnToggleAll(ChangeEventArgs e)
+    {
+        bool check = e.Value is bool b && b;
+        await OnToggleAllChecked.InvokeAsync(check);
+    }
+
+    private async Task ToggleFileChecked(FileViewModel file, ChangeEventArgs e)
+    {
+        file.IsChecked = e.Value is bool b && b;
+        await OnCheckChanged.InvokeAsync();
+    }
+
+    private void SetFilter(FileStatus? filter) => CurrentFilter = filter;
 
     private void SortBy(string column)
     {
-        if (SortColumn == column)
-        {
-            SortAscending = !SortAscending;
-        }
-        else
-        {
-            SortColumn = column;
-            SortAscending = true;
-        }
+        if (SortColumn == column) SortAscending = !SortAscending;
+        else { SortColumn = column; SortAscending = true; }
     }
 
-    private void ToggleViewMode()
-    {
-        IsCompactView = !IsCompactView;
-    }
+    private void ToggleViewMode() => IsCompactView = !IsCompactView;
 
-    private async Task SelectFile(FileViewModel file)
-    {
-        await OnFileSelected.InvokeAsync(file);
-    }
+    private async Task SelectFile(FileViewModel file) => await OnFileSelected.InvokeAsync(file);
 
     private string GetBadgeClass(FileStatus status) => status switch
     {
-        FileStatus.Done => "badge-success",
-        FileStatus.Analyzed => "badge-info",
-        FileStatus.Error => "badge-danger",
-        _ => "badge-secondary"
+        FileStatus.Done => "badge-done",
+        FileStatus.Analyzed => "badge-analyzed",
+        FileStatus.Error => "badge-error",
+        _ => "badge-pending"
     };
 
     private string GetStatusText(FileStatus status) => status switch
@@ -207,5 +260,4 @@
         var preview = string.IsNullOrEmpty(file.NewName) ? "sin vista previa" : $"nuevo nombre: {file.NewName}";
         return $"{file.OriginalName}, estado: {statusText}, {preview}";
     }
-    };
 }

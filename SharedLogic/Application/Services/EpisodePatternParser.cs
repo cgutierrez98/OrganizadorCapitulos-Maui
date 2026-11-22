@@ -20,14 +20,16 @@ namespace organizadorCapitulos.Application.Services
             new(@"(?<=[.\s_-])(\d{2,4})(?=[.\s_-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex _extensionPattern =
-            new(@"\.(mkv|mp4|avi|wmv|flv|webm|mpeg|mov)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new(@"\.(mkv|mp4|avi|wmv|flv|webm|mpeg|mov|m4v)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex _bracketsPattern =
+            new(@"\[[^\]]*\]|\([^)]*\)", RegexOptions.Compiled);
         private static readonly Regex _titleAfterCodePattern =
-            new(@"(?:[Ss]\d+[Ee]\d+|\d+x\d+)[.\s_-]+([^.\d][^.]+?)(?:\s+\d+p|\s+[Ww]eb|\s+[Hh]d|\s+[Bb]lu|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new(@"(?:[Ss]\d{1,2}[.\s_-]?[Ee]\d{1,3}(?:-[Ee]?\d{1,3})?|\d{1,2}x\d{2,3})[.\s_-]+([^.\d][^.]+?)(?:\s+\d+p|\s+[Ww]eb|\s+[Hh]d|\s+[Bb]lu|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         // Captures text BEFORE the S##E##/##x## code (e.g. "Title Name S01E05" → "Title Name")
         private static readonly Regex _titleBeforeCodePattern =
-            new(@"^(.*?)\s+(?:[Ss]\d{1,2}[Ee]\d{1,3}|\d{1,2}x\d{2,3})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new(@"^(.*?)[.\s_-]+(?:[Ss]\d{1,2}[.\s_-]?[Ee]\d{1,3}|\d{1,2}x\d{2,3}|Season[.\s_-]?\d{1,2}|(?:Temp|Temporada)[.\s_-]?\d{1,2})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex _qualityTagPattern =
-            new(@"\b(1080p|720p|480p|WEB-DL|WEBDL|WEBRip|BluRay|HDTV|x264|x265|HEVC|AAC|AC3|DUAL|MULTI|Spa|Eng|Sub)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new(@"\b(2160p|1080p|720p|480p|4k|uhd|fhd|hd|sd|hdr10plus|hdr10|hdr|dv|dovi|dolby|vision|WEB-DL|WEBDL|WEBRip|BluRay|Blu-Ray|BDRip|BRRip|DVDRip|HDTV|x264|x265|h264|h265|HEVC|AVC|AV1|VP9|XviD|AAC|AC3|EAC3|DTS-HD|DTS|FLAC|Atmos|TrueHD|DUAL|MULTI|Spa|Eng|Spanish|English|Latino|Castellano|Sub|Subs|Subbed|AMZN|NF|Netflix|DSNP|ATVP|HMAX|REPACK|PROPER|EXTENDED|UNCUT|IMAX)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex _yearPattern =
             new(@"\b((?:19|20)\d{2})\b", RegexOptions.Compiled);
 
@@ -129,6 +131,56 @@ namespace organizadorCapitulos.Application.Services
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Extracts the series title (text before SxxExx / NxNN / absolute episode number).
+        /// </summary>
+        public static string ExtractSeriesTitle(string filename)
+        {
+            string cleaned = _extensionPattern.Replace(filename, "");
+            cleaned = _bracketsPattern.Replace(cleaned, " ");
+
+            var beforeMatch = _titleBeforeCodePattern.Match(cleaned);
+            if (beforeMatch.Success && beforeMatch.Groups[1].Value.Trim().Length > 1)
+            {
+                return CleanCandidateText(beforeMatch.Groups[1].Value);
+            }
+
+            // Handle "Show Name - 05" or "Show Name - 150 - Title"
+            var dashMatch = Regex.Match(cleaned, @"^(.*?)\s*-\s*\d{2,4}(?:\b|$)");
+            if (dashMatch.Success && dashMatch.Groups[1].Value.Trim().Length > 1)
+            {
+                return CleanCandidateText(dashMatch.Groups[1].Value);
+            }
+
+            return CleanCandidateText(ExtractPossibleTitle(filename));
+        }
+
+        /// <summary>
+        /// Extracts the episode title (text after SxxExx / NxNN, stripped of quality tags).
+        /// </summary>
+        public static string ExtractEpisodeTitle(string filename)
+        {
+            string cleaned = _extensionPattern.Replace(filename, "");
+            cleaned = _bracketsPattern.Replace(cleaned, " ");
+
+            var afterMatch = _titleAfterCodePattern.Match(cleaned);
+            if (afterMatch.Success && afterMatch.Groups[1].Value.Trim().Length > 1)
+            {
+                return CleanCandidateText(afterMatch.Groups[1].Value);
+            }
+
+            return string.Empty;
+        }
+
+        private static string CleanCandidateText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            string cleaned = text.Replace("_", " ").Replace(".", " ");
+            cleaned = _qualityTagPattern.Replace(cleaned, "");
+            cleaned = Regex.Replace(cleaned, @"\s{2,}", " ").Trim().Trim('-', ' ').Trim();
+            return cleaned;
         }
 
         /// <summary>

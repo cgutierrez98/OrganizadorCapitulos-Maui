@@ -58,14 +58,16 @@ namespace organizadorCapitulos.Core.Entities
                 .Replace("{EpisodeTitle}", SanitizeFileName(EpisodeTitle))
                 .Replace("{Year}", Year > 0 ? Year.ToString() : string.Empty);
 
-            // Clean up double spaces or trailing dashes from empty substitutions
+            // Clean up empty parentheses, double spaces, or trailing dashes from empty substitutions
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\(\s*\)", string.Empty);
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\[\s*\]", string.Empty);
             result = System.Text.RegularExpressions.Regex.Replace(result, @"\s*-\s*-\s*", " - ");
             result = System.Text.RegularExpressions.Regex.Replace(result, @"\s{2,}", " ").Trim().Trim('-').Trim();
 
             return SanitizeFileName(result) + extension;
         }
 
-        private static string SanitizeFileName(string input)
+        public static string SanitizeFileName(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return input;
             var invalid = System.IO.Path.GetInvalidFileNameChars();

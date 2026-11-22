@@ -63,7 +63,29 @@
             };
 
             document.addEventListener('keydown', (event) => {
+                const keyLower = (event.key || '').toLowerCase();
+
+                // Allow Escape to close open modals even when focused inside an input
+                if (keyLower === 'escape') {
+                    const escTarget = document.querySelector('[data-shortcut="escape"]');
+                    if (escTarget && !escTarget.disabled) {
+                        event.preventDefault();
+                        escTarget.click();
+                        return;
+                    }
+                }
+
                 if (isTypingContext(document.activeElement)) return;
+
+                // Direct '?' key shortcut (often shift+/)
+                if (event.key === '?') {
+                    const helpTarget = document.querySelector('[data-shortcut="?"]');
+                    if (helpTarget && !helpTarget.disabled) {
+                        event.preventDefault();
+                        helpTarget.click();
+                        return;
+                    }
+                }
 
                 const shortcut = normalizeShortcut(event);
                 if (!shortcut) return;

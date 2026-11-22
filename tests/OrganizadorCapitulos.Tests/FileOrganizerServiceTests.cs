@@ -70,6 +70,63 @@ namespace OrganizadorCapitulos.Tests
             Directory.Delete(workspace, true);
         }
 
+        [Fact]
+        public async Task RenameFileWithCompanionsAsync_RenamesCompanionSubtitles()
+        {
+            var workspace = CreateTemporaryDirectory();
+            var videoPath = Path.Combine(workspace, "Breaking.Bad.S01E01.mkv");
+            var srtPath = Path.Combine(workspace, "Breaking.Bad.S01E01.es.srt");
+            await File.WriteAllTextAsync(videoPath, "video");
+            await File.WriteAllTextAsync(srtPath, "subtitle");
+
+            var repo = new FileRepository();
+            var svc = new FileOrganizerService(repo, new FakeProgressObserver());
+
+            var (newPath, companions) = await svc.RenameFileWithCompanionsAsync(videoPath, new ChapterInfo
+            {
+                Title = "Breaking Bad",
+                Season = 1,
+                Episode = 1,
+                EpisodeTitle = "Pilot"
+            }, new ChangeStrategy());
+
+            var expectedVideo = Path.Combine(workspace, "S01E01 - Breaking Bad - Pilot.mkv");
+            var expectedSrt = Path.Combine(workspace, "S01E01 - Breaking Bad - Pilot.es.srt");
+
+            Assert.Equal(expectedVideo, newPath);
+            Assert.Single(companions);
+            Assert.True(File.Exists(expectedVideo));
+            Assert.True(File.Exists(expectedSrt));
+            Assert.False(File.Exists(srtPath));
+
+            Directory.Delete(workspace, true);
+        }
+
+        [Fact]
+        public async Task MoveFilesStructuredAsync_CreatesSeriesSeasonSubfolders()
+        {
+            var workspace = CreateTemporaryDirectory();
+            var sourceDir = Directory.CreateDirectory(Path.Combine(workspace, "src")).FullName;
+            var destRoot = Directory.CreateDirectory(Path.Combine(workspace, "library")).FullName;
+            var videoPath = Path.Combine(sourceDir, "S02E05 - Breaking Bad.mkv");
+            await File.WriteAllTextAsync(videoPath, "video");
+
+            var repo = new FileRepository();
+            var svc = new FileOrganizerService(repo, new FakeProgressObserver());
+
+            var moves = await svc.MoveFilesStructuredAsync(
+                new List<(string, ChapterInfo?)> { (videoPath, new ChapterInfo { Title = "Breaking Bad", Season = 2, Episode = 5 }) },
+                destRoot,
+                organizeIntoSubfolders: true);
+
+            var expectedPath = Path.Combine(destRoot, "Breaking Bad", "Temporada 02", "S02E05 - Breaking Bad.mkv");
+            Assert.Single(moves);
+            Assert.Equal(expectedPath, moves[0].newPath);
+            Assert.True(File.Exists(expectedPath));
+
+            Directory.Delete(workspace, true);
+        }
+
         private static string CreateTemporaryDirectory()
         {
             var path = Path.Combine(Path.GetTempPath(), "OrganizadorCapitulos.Tests", Path.GetRandomFileName());

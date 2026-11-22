@@ -205,6 +205,50 @@ namespace OrganizadorCapitulos.Tests
             Assert.Equal(1, vm.UndoRedo.UndoCount);
         }
 
+        [Fact]
+        public async Task ConfirmDryRunAsync_RecordsSingleUndoBatchAndLogsRenames()
+        {
+            var folder = CreateTemporaryDirectory();
+            var p1 = Path.Combine(folder, "ep1.mkv");
+            var p2 = Path.Combine(folder, "ep2.mkv");
+            await File.WriteAllTextAsync(p1, "v1");
+            await File.WriteAllTextAsync(p2, "v2");
+
+            var logService = new OperationLogService();
+            var vm = CreateViewModel(logService);
+            vm.ChangeModeCommand.Execute(organizadorCapitulos.Core.Enums.RenameMode.Change);
+            vm.Files.Add(new FileViewModel { FullPath = p1, OriginalName = "ep1.mkv", SeriesTitle = "Show", Season = 1, Episode = 1, Status = organizadorCapitulos.Core.Enums.FileStatus.Analyzed });
+            vm.Files.Add(new FileViewModel { FullPath = p2, OriginalName = "ep2.mkv", SeriesTitle = "Show", Season = 1, Episode = 2, Status = organizadorCapitulos.Core.Enums.FileStatus.Analyzed });
+
+            await vm.RenameAllCommand.ExecuteAsync(null);
+            await vm.ConfirmDryRunCommand.ExecuteAsync(null);
+
+            Assert.Equal(1, vm.UndoRedo.UndoCount);
+            Assert.Equal(2, logService.Entries.Count(e => e.Action == "Rename" && e.Status == "Success"));
+
+            Directory.Delete(folder, true);
+        }
+
+        [Fact]
+        public void UpdatePreviewForFile_UsesCustomTemplateAndMaintainStrategy()
+        {
+            var vm = CreateViewModel(new OperationLogService());
+            vm.Settings.FileNameTemplate = "{Title} - {Season}{Episode}";
+            var file = new FileViewModel
+            {
+                OriginalName = "raw.mkv",
+                SeriesTitle = "Dark",
+                Season = 1,
+                Episode = 2,
+                Status = organizadorCapitulos.Core.Enums.FileStatus.Analyzed
+            };
+            vm.Files.Add(file);
+
+            vm.UpdatePreviewForFile(file);
+
+            Assert.Equal("Dark - S01E02.mkv", file.NewName);
+        }
+
         private static HomeViewModel CreateViewModel(OperationLogService logService, FakeAIService? aiService = null)
         {
             var repo = new FileRepository();

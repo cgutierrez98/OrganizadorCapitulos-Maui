@@ -7,8 +7,8 @@ namespace organizadorCapitulos.Application.Strategies
     {
         public string GetNewFileName(string originalFileName, ChapterInfo info)
         {
-            // Keep original file name by default
-            return originalFileName;
+            string extension = System.IO.Path.GetExtension(originalFileName);
+            return info.GenerateFileName(extension);
         }
 
         public void UpdateAfterRename(ChapterInfo chapterInfo)

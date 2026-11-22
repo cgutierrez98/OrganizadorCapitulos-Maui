@@ -11,7 +11,7 @@
                     <h5 class="modal-title" id="operation-log-title">Historial de operaciones</h5>
                     <p class="modal-subtitle">Consulta los últimos cambios aplicados y su resultado para revisar el flujo de trabajo.</p>
                 </div>
-                <button type="button" class="btn-close" @onclick="Close" aria-label="Cerrar diálogo"></button>
+                <button type="button" class="btn-close" data-shortcut="escape" @onclick="Close" aria-label="Cerrar diálogo"></button>
             </div>
             <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
                 @if (!LogService.Entries.Any())
