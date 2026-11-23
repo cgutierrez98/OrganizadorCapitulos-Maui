@@ -4,3 +4,4 @@
 **/obj/
 .gitignore
 plan/refactor-sharedlogic-homeviewmodel-1.md
+.github/agents/*
