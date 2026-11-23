@@ -1,114 +1,111 @@
-**OrganizadorCapitulos.Maui**
+# OrganizadorCapitulos.Maui
 
-![build](https://img.shields.io/badge/build-local-lightgrey) ![license](https://img.shields.io/badge/license-MIT-blue)
+[![CI](https://github.com/cgutierrez98/OrganizadorCapitulos-Maui/actions/workflows/ci.yml/badge.svg)](https://github.com/cgutierrez98/OrganizadorCapitulos-Maui/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6.svg)
+![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4.svg)
 
 ![Captura de la aplicación](Resources/Images/organizadorcapitulos.png)
 
-OrganizadorCapitulos.Maui es una aplicación de escritorio desarrollada específicamente para Windows (interfaz Blazor embebida en .NET MAUI) diseñada para ayudar a organizar, renombrar y mover archivos de capítulos/episodios de series de forma rápida y segura. La app combina una interfaz moderna con lógica reutilizable en `SharedLogic` y herramientas auxiliares como un script Python para limpieza de nombres.
+**OrganizadorCapitulos.Maui** es una aplicación de escritorio para Windows construida con **.NET MAUI + BlazorWebView** diseñada para analizar, renombrar y organizar capítulos de series y películas de forma rápida, segura y reversible.
 
-**Descripción breve**:
-- **Qué hace:** escanea carpetas, detecta archivos de video, propone nombres limpios (incluyendo sugerencias asistidas por IA), renombra y mueve archivos evitando colisiones.
-- **Interfaz:** UI construida con .NET MAUI + BlazorWebView (componentes Razor) para una experiencia moderna y responsive.
-- **Arquitectura:** lógica central en `SharedLogic` (servicios, estrategias, entidades) y capa MAUI que orquesta la interacción y presenta la interfaz.
+---
 
-**Características principales**
-- **Carga por arrastrar y soltar** y explorador de carpetas.
-- **Análisis y limpieza de nombres** (algoritmos locales + script Python de apoyo: `Python/ai_service.py`).
-- **Sugerencias IA (hook)** — infraestructura preparada para usar un servicio Python/externo (se incluye un stub en `SharedLogic/Infrastructure/Services/PythonAIService.cs`).
-- **Renombrado y movimiento seguro** con detección de colisiones y generación de nombres únicos (`SharedLogic/Application/Services/FileOrganizerService.cs`).
-- **Deshacer/Rehacer** operaciones mediante `UndoRedoService`.
-- **Búsqueda TMDB** integrada (interfaz para buscar metadatos de series).
+## Características principales
 
-- **Tecnologías**
-- **Plataforma objetivo:** Windows (compilación dirigida a `net9.0-windows10.0.19041.0`). Este repositorio está configurado y mantenido para compilar únicamente en Windows.
-- **Runtime / UI:** .NET MAUI (BlazorWebView) sobre Windows
-- **Librerías:** CommunityToolkit.Maui, CommunityToolkit.Mvvm
-- **Script auxiliar:** Python 3 (script en `Python/ai_service.py`)
+- **Carga flexible de archivos:** Explorador de carpetas integrado y **arrastrar y soltar nativo (WinUI)** para carpetas de video o archivos `.json` de sesiones exportadas.
+- **Análisis automático local y script Python auxiliar:**
+  - Detección automática en C# ([EpisodePatternParser.cs](SharedLogic/Application/Services/EpisodePatternParser.cs)) de patrones `S01E01`, `1x01`, `Season X Episode Y`, `Temporada X Capitulo Y`, numeración absoluta de anime, películas con año y limpieza de etiquetas de calidad/fansub.
+  - Script auxiliar en Python ([Python/ai_service.py](Python/ai_service.py)) integrado mediante [PythonAIService.cs](SharedLogic/Infrastructure/Services/PythonAIService.cs) para análisis adicional bajo demanda.
+- **Integración con TMDB:**
+  - Búsqueda de **series y películas** con póster, año y sinopsis.
+  - Idioma configurable (`es-ES`, `es-MX`, `en-US`, etc.) con fallback automático a inglés.
+  - Descarga de títulos por episodio o emparejamiento aproximado por nombre (ignorando tildes y puntuación), con descarga paralela y cancelación.
+  - Auto-identificación en lote para películas y almacenamiento cifrado de la API Key/Token con **DPAPI** en Windows.
+- **Renombrado seguro y personalizable:**
+  - Tres estrategias: **Mantener estructura** (numeración secuencial), **Cambiar estructura** (modo estricto) y **Modo Película**.
+  - **Constructor visual de plantillas** (`{Title}`, `{Season}`, `{Episode}`, `{EpisodeTitle}`, `{Year}`) con vista previa en vivo.
+  - Confirmación previa (*dry-run*) y aviso visual de colisiones antes de tocar archivos en disco.
+  - **Subtítulos acompañantes:** renombra y mueve automáticamente archivos `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub`, `.idx` y `.nfo` (incluyendo sufijos de idioma como `.es.srt`).
+- **Organización en carpetas estilo Plex / Jellyfin:** Opción para mover archivos creando automáticamente la estructura `Serie/Temporada 01/` o `Película (Año)/`.
+- **Productividad y control:**
+  - Buscador instantáneo, filtros por estado, selección múltiple y edición en lote (*Aplicar a todos*, *Temporada a todos*, *Renumeración secuencial*).
+  - **Deshacer / Rehacer atómico por lote** persistente entre sesiones ([UndoRedoService.cs](Services/UndoRedoService.cs)) e historial completo de operaciones ([OperationLogService.cs](Services/OperationLogService.cs)).
+  - Exportación e importación de sesiones en `.json`, tema claro/oscuro y atajos de teclado (`?` para ver la guía, `Esc` para cerrar diálogos).
 
-**Archivos relevantes**
-- Proyecto MAUI: [OrganizadorCapitulos.Maui.csproj](OrganizadorCapitulos.Maui.csproj#L1)
-- Lógica de organización de archivos: [SharedLogic/Application/Services/FileOrganizerService.cs](SharedLogic/Application/Services/FileOrganizerService.cs#L1)
-- ViewModel principal / flujo UI: [ViewModels/HomeViewModel.cs](ViewModels/HomeViewModel.cs#L1)
-- Página principal (Blazor): [Components/Pages/Home.razor](Components/Pages/Home.razor#L1)
-- Script de limpieza de nombres (Python): [Python/ai_service.py](Python/ai_service.py#L1)
+---
 
-**Requisitos**
-- .NET 9 SDK y workloads de MAUI instalados (Visual Studio con workload MAUI o `dotnet workload install maui`).
-- Python 3 si se desea ejecutar o desarrollar el script auxiliar de limpieza / IA.
+## Tecnologías y arquitectura
 
-**Instalación y ejecución rápida (Windows / desarrollo)**
-1. Abrir la solución/proyecto en Visual Studio con workloads de MAUI o usar CLI.
-2. Restaurar paquetes y compilar:
+- **Plataforma objetivo:** Windows 10/11 (`net9.0-windows10.0.19041.0`)
+- **UI:** .NET MAUI con `BlazorWebView` (componentes Razor)
+- **Librerías:** `CommunityToolkit.Maui`, `CommunityToolkit.Mvvm`
+- **Tests:** xUnit (`tests/OrganizadorCapitulos.Tests`)
+- **Script auxiliar (opcional):** Python 3 (`Python/ai_service.py`)
 
-```
-dotnet restore
-dotnet build
-```
+### Estructura del proyecto
 
-3. Ejecutar la app (ejemplo por CLI):
+- `OrganizadorCapitulos.Maui.csproj` — Aplicación de escritorio MAUI Blazor para Windows.
+- `SharedLogic/` — Lógica de dominio reutilizable (entidades, estrategias de renombrado, `EpisodePatternParser`, `FileOrganizerService`, `TmdbMetadataService`, `PythonAIService`).
+- `ViewModels/HomeViewModel.cs` — Coordinación del estado de la interfaz y comandos MVVM.
+- `Components/` — Componentes Razor (`Pages/Home.razor`, `FileList.razor`, `DetailsForm.razor`, `TmdbSearchDialog.razor`, `SettingsDialog.razor`, etc.).
+- `Services/` — Servicios de aplicación (`SettingsService`, `UndoRedoService`, `OperationLogService`, `ThemeService`, `DragDropService`).
+- `tests/OrganizadorCapitulos.Tests/` — Suite de pruebas unitarias.
 
-```
+---
+
+## Requisitos
+
+- **.NET 9 SDK** con el workload de MAUI para Windows:
+  ```powershell
+  dotnet workload install maui-windows
+  ```
+- **Python 3** (opcional, solo si deseas usar el botón *Analizar* con `Python/ai_service.py`).
+
+---
+
+## Instalación, ejecución y tests
+
+```powershell
+# Compilar la solución
+dotnet build OrganizadorCapitulos-Maui.sln
+
+# Ejecutar la aplicación
 dotnet run --project OrganizadorCapitulos.Maui.csproj
+
+# Ejecutar los tests unitarios
+dotnet test tests/OrganizadorCapitulos.Tests/OrganizadorCapitulos.Tests.csproj
 ```
 
-Nota: este proyecto se mantiene para compilación en Windows; las instrucciones y scripts de empaquetado para Android/iOS/Mac Catalyst han sido retirados de este README.
+### Uso del script Python (opcional)
 
-**Uso del script Python (opcional)**
-- Para probar localmente el limpiador de nombres:
-
-```
-python Python/ai_service.py --help
+```powershell
+python Python/ai_service.py analyze --input "Breaking.Bad.S01E01.1080p.mkv"
 ```
 
-El proyecto copia `Python/ai_service.py` al output para facilitar llamadas externas (ver `OrganizadorCapitulos.Maui.csproj`).
+---
 
-**Cómo contribuir**
-- Reporta issues o sugiere mejoras.
-- Para cambios en la lógica de renombrado, edita `SharedLogic` (servicios y estrategias) y añade tests.
-- Si añades integración IA real, implementa `IAIService` en `Infrastructure/Services` y actualiza la vista para controlar disponibilidad.
+## Publicación (Windows)
 
-**Notas y recomendaciones**
-- No se incluye licencia en el repositorio; añade un archivo `LICENSE` si planeas publicar con una licencia concreta.
-- Hay un stub de `PythonAIService` en `SharedLogic/Infrastructure/Services` que actualmente no llama al script Python.
+Para generar un paquete autocontenido sin MSIX para Windows x64:
 
-
-—
-
-Si quieres, puedo:
-- Añadir badges (build, license) al README. (hecho)
-- Crear instrucciones detalladas de publicación para Windows/Android/iOS. (hecho)
-- Documentar la API interna y puntos de extensión (IA, metadata providers). (hecho)
-
-**Publicación (resumen y comandos)**
-
-Windows (desarrollo / paquete sin MSIX):
-
-```
-dotnet publish -f net9.0-windows10.0.19041.0 -c Release -r win10-x64 --self-contained false -o ./publish/windows
+```powershell
+dotnet publish OrganizadorCapitulos.Maui.csproj -c Release -f net9.0-windows10.0.19041.0 -r win-x64 --self-contained true -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -o ./publish/windows
 ```
 
-Para crear paquete MSIX desde Visual Studio: seleccione `Publish` → `Create App Packages` y siga el asistente. Para la Microsoft Store siga la guía oficial de MAUI.
+Las publicaciones oficiales etiquetadas (`v*`) se generan automáticamente mediante [GitHub Actions](.github/workflows/release.yml).
 
-**Publicación (Windows)**
+---
 
-Publicación para Windows (ejemplo: build de Release dirigida a Windows 10+):
+## Extensibilidad
 
-```
-dotnet publish -f net9.0-windows10.0.19041.0 -c Release -r win10-x64 --self-contained false -o ./publish/windows
-```
+- **`IAIService` / `PythonAIService`** ([SharedLogic/Infrastructure/Services/PythonAIService.cs](SharedLogic/Infrastructure/Services/PythonAIService.cs)): implementa `IAIService` para conectar otro analizador o proveedor LLM.
+- **`IMetadataService` / `TmdbMetadataService`** ([SharedLogic/Infrastructure/Services/TmdbMetadataService.cs](SharedLogic/Infrastructure/Services/TmdbMetadataService.cs)): proveedor de metadatos extensible para añadir otras fuentes además de TMDB.
+- **`IRenameStrategy` / `RenameStrategyFactory`** ([SharedLogic/Application/Strategies](SharedLogic/Application/Strategies)): añade nuevas estrategias de renombrado.
+- **`FileOrganizerService`** ([SharedLogic/Application/Services/FileOrganizerService.cs](SharedLogic/Application/Services/FileOrganizerService.cs)): flujo central de carga, renombrado con subtítulos y movimiento estructurado.
 
-Para crear un paquete MSIX empaquetado y subir a la Microsoft Store, use Visual Studio: `Publish` → `Create App Packages` y siga el asistente. Consulte la documentación oficial de .NET MAUI y Microsoft Store para requisitos adicionales.
+---
 
-**API y extensibilidad (dónde tocar)**
+## Licencia
 
-Puntos de extensión bien definidos para integrar nuevas funcionalidades:
-
-- `IAIService` / `PythonAIService` (ruta: `SharedLogic/Infrastructure/Services`): implemente `IAIService` para conectar el script Python `Python/ai_service.py` u otro servicio externo. El stub actual retorna `null` y `IsAvailable()` = `false`.
-- `IMetadataService` (implementaciones en `OrganizadorCapitulos.Maui/Services`): usado para obtener metadatos (TMDB). Sustituya o extienda para integrar otras fuentes.
-- `RenameStrategyFactory` y las estrategias (`SharedLogic/Application/Strategies`): añade nuevas reglas de renombrado o modifica las existentes.
-- `FileOrganizerService` (`SharedLogic/Application/Services/FileOrganizerService.cs`): flujo principal para cargar, renombrar y mover archivos — buen lugar para instrumentación y validaciones adicionales.
-
-Recomendaciones de integración Python:
-
-- Para llamar al script `Python/ai_service.py` desde .NET, use `System.Diagnostics.Process` o un pequeño servidor HTTP local en Python y comuníquese por HTTP/JSON.
-- Asegure manejo de errores y timeouts. Mantenga `IsAvailable()` como gate para la UI.
+Distribuido bajo licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
