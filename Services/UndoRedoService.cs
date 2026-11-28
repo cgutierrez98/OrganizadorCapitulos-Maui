@@ -27,7 +27,10 @@ namespace OrganizadorCapitulos.Maui.Services
         private readonly Stack<List<RenameOperation>> _undoStack = new();
         private readonly Stack<List<RenameOperation>> _redoStack = new();
         private readonly SemaphoreSlim _saveLock = new(1, 1);
+        private readonly object _debounceLock = new();
         private readonly string _persistPath;
+        private CancellationTokenSource? _debounceCts;
+        private const int SaveDebounceMs = 150;
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
         public bool CanUndo => _undoStack.Count > 0;
@@ -76,7 +79,55 @@ namespace OrganizadorCapitulos.Maui.Services
             }
         }
 
+        public Task FlushAsync() => SaveHistoryAsync();
+
+        private void ScheduleSave()
+        {
+            lock (_debounceLock)
+            {
+                _debounceCts?.Cancel();
+                _debounceCts?.Dispose();
+                _debounceCts = new CancellationTokenSource();
+                var token = _debounceCts.Token;
+                _ = DebouncedSaveAsync(token);
+            }
+        }
+
+        private async Task DebouncedSaveAsync(CancellationToken token)
+        {
+            try
+            {
+                await Task.Delay(SaveDebounceMs, token).ConfigureAwait(false);
+                if (!token.IsCancellationRequested)
+                {
+                    await SaveHistoryCoreAsync().ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by newer save or explicit flush
+            }
+        }
+
         private async Task SaveHistoryAsync()
+        {
+            CancellationTokenSource? cts;
+            lock (_debounceLock)
+            {
+                cts = _debounceCts;
+                _debounceCts = null;
+            }
+
+            if (cts != null)
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
+
+            await SaveHistoryCoreAsync().ConfigureAwait(false);
+        }
+
+        private async Task SaveHistoryCoreAsync()
         {
             await _saveLock.WaitAsync().ConfigureAwait(false);
             try
@@ -115,7 +166,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 _undoStack.Push(operations);
                 TrimUndoHistoryIfNeeded();
                 _redoStack.Clear();
-                _ = SaveHistoryAsync();
+                ScheduleSave();
             }
         }
 
@@ -245,7 +296,7 @@ namespace OrganizadorCapitulos.Maui.Services
         {
             _undoStack.Clear();
             _redoStack.Clear();
-            _ = SaveHistoryAsync();
+            ScheduleSave();
         }
 
         private string GetUniqueConflictPath(string path)

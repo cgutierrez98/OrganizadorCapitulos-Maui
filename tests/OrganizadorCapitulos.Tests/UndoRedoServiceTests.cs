@@ -112,7 +112,7 @@ public class UndoRedoServiceTests
     }
 
     [Fact]
-    public void RecordOperations_CapsHistoryAt50Batches()
+    public async Task RecordOperations_CapsHistoryAt50Batches()
     {
         var dir = Path.Combine(Path.GetTempPath(), "OrganizadorCapitulos.Tests", Path.GetRandomFileName());
         Directory.CreateDirectory(dir);
@@ -125,6 +125,7 @@ public class UndoRedoServiceTests
             }
 
             Assert.Equal(50, svc.UndoCount);
+            await svc.FlushAsync();
         }
         finally
         {
