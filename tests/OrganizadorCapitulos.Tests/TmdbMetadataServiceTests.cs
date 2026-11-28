@@ -200,6 +200,99 @@ public class TmdbMetadataServiceTests
         Assert.Equal(3, match.Value.episode);
     }
 
+    [Fact]
+    public async Task GetEpisodeTitleAsync_SameSeasonMultipleEpisodes_MakesSingleHttpRequest()
+    {
+        int callCount = 0;
+        var handler = new CallbackHttpMessageHandler(_ =>
+        {
+            callCount++;
+            const string body = """
+                {
+                    "episodes": [
+                        {"episode_number": 1, "name": "Pilot"},
+                        {"episode_number": 2, "name": "Cat's in the Bag..."},
+                        {"episode_number": 3, "name": "...And the Bag's in the River"}
+                    ]
+                }
+                """;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        });
+        var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.themoviedb.org/3/") };
+        var svc = new TmdbMetadataService(client);
+        svc.Configure("fake-api-key");
+
+        var t1 = await svc.GetEpisodeTitleAsync(1396, 1, 1);
+        var t2 = await svc.GetEpisodeTitleAsync(1396, 1, 2);
+        var t3 = await svc.GetEpisodeTitleAsync(1396, 1, 3);
+
+        Assert.Equal("Pilot", t1);
+        Assert.Equal("Cat's in the Bag...", t2);
+        Assert.Equal("...And the Bag's in the River", t3);
+        Assert.Equal(1, callCount);
+    }
+
+    [Fact]
+    public async Task GetEpisodeTitleAsync_FallbackToEnglish_CachesBothLanguages()
+    {
+        int callCount = 0;
+        var handler = new CallbackHttpMessageHandler(req =>
+        {
+            callCount++;
+            bool isEnglish = req.RequestUri!.Query.Contains("language=en-US", StringComparison.OrdinalIgnoreCase);
+            string body = isEnglish
+                ? """{"episodes":[{"episode_number":1,"name":"English Title"},{"episode_number":2,"name":"Second"}]}"""
+                : """{"episodes":[{"episode_number":1,"name":""},{"episode_number":2,"name":""}]}""";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        });
+        var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.themoviedb.org/3/") };
+        var svc = new TmdbMetadataService(client);
+        svc.Configure("fake-api-key");
+        svc.ConfigureLanguage("es-ES");
+
+        var ep1 = await svc.GetEpisodeTitleAsync(200, 1, 1);
+        var ep2 = await svc.GetEpisodeTitleAsync(200, 1, 2);
+
+        Assert.Equal("English Title", ep1);
+        Assert.Equal("Second", ep2);
+        Assert.Equal(2, callCount); // 1 call for es-ES season, 1 call for en-US season
+    }
+
+    [Fact]
+    public async Task FindEpisodeByTitleAsync_MultipleQueries_FetchesCatalogOnce()
+    {
+        int callCount = 0;
+        var handler = new CallbackHttpMessageHandler(req =>
+        {
+            callCount++;
+            string body = req.RequestUri!.AbsolutePath.EndsWith("/season/1")
+                ? """{"episodes":[{"episode_number":1,"name":"Pilot"},{"episode_number":2,"name":"The Train Job"}]}"""
+                : """{"number_of_seasons":1}""";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        });
+        var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.themoviedb.org/3/") };
+        var svc = new TmdbMetadataService(client);
+        svc.Configure("fake-api-key");
+
+        var m1 = await svc.FindEpisodeByTitleAsync(300, "pilot");
+        var m2 = await svc.FindEpisodeByTitleAsync(300, "train job");
+
+        Assert.NotNull(m1);
+        Assert.NotNull(m2);
+        Assert.Equal(1, m1.Value.episode);
+        Assert.Equal(2, m2.Value.episode);
+        Assert.Equal(2, callCount); // 1 series + 1 season total
+    }
+
     private class CallbackHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _callback;

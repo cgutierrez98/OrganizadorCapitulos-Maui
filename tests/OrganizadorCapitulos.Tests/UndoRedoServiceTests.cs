@@ -56,7 +56,6 @@ public class UndoRedoServiceTests
     {
         var repo = new FakeFileRepository();
         repo.ExistingFiles.Add("new.mkv");
-        repo.ExistingFiles.Add("old.mkv"); // after undo, old path exists for redo
         var svc = new UndoRedoService(repo);
         svc.RecordOperation("old.mkv", "new.mkv");
 
@@ -83,6 +82,54 @@ public class UndoRedoServiceTests
         });
         Assert.Equal(2, svc.UndoCount);
         Assert.Equal(0, svc.RedoCount);
+    }
+
+    [Fact]
+    public async Task UndoAllAsync_UndoesAllBatchesAndPersistsInIsolatedDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OrganizadorCapitulos.Tests", Path.GetRandomFileName());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var repo = new FakeFileRepository();
+            repo.ExistingFiles.Add("b1.mkv");
+            repo.ExistingFiles.Add("b2.mkv");
+            var svc = new UndoRedoService(repo, dir);
+            svc.RecordOperation("a1.mkv", "b1.mkv");
+            svc.RecordOperation("a2.mkv", "b2.mkv");
+
+            var result = await svc.UndoAllAsync();
+
+            Assert.True(result.success);
+            Assert.Equal(2, result.count);
+            Assert.False(svc.CanUndo);
+            Assert.Equal(2, svc.RedoCount);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void RecordOperations_CapsHistoryAt50Batches()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OrganizadorCapitulos.Tests", Path.GetRandomFileName());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var svc = new UndoRedoService(new FakeFileRepository(), dir);
+            for (int i = 0; i < 55; i++)
+            {
+                svc.RecordOperation($"old{i}.mkv", $"new{i}.mkv");
+            }
+
+            Assert.Equal(50, svc.UndoCount);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
     }
 
     // Minimal fake repository for tests

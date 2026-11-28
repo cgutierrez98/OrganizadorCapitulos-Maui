@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
@@ -18,6 +18,7 @@
     <PackageReference Include="xunit" Version="2.4.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
   </ItemGroup>
 
@@ -27,6 +28,9 @@
     <Compile Include="..\..\Services\SettingsService.cs" Link="App\Services\SettingsService.cs" />
     <Compile Include="..\..\Services\UndoRedoService.cs" Link="App\Services\UndoRedoService.cs" />
     <Compile Include="..\..\Services\OperationLogService.cs" Link="App\Services\OperationLogService.cs" />
+    <Compile Include="..\..\Services\Workflows\FileAnalysisWorkflow.cs" Link="App\Services\Workflows\FileAnalysisWorkflow.cs" />
+    <Compile Include="..\..\Services\Workflows\FileOrganizationWorkflow.cs" Link="App\Services\Workflows\FileOrganizationWorkflow.cs" />
+    <Compile Include="..\..\Services\Workflows\TmdbMatchingWorkflow.cs" Link="App\Services\Workflows\TmdbMatchingWorkflow.cs" />
     <Compile Include="..\..\Services\Interfaces\IThemeService.cs" Link="App\Services\Interfaces\IThemeService.cs" />
     <Compile Include="..\..\Services\Interfaces\IDragDropService.cs" Link="App\Services\Interfaces\IDragDropService.cs" />
     <Compile Include="..\..\Services\DragDropService.cs" Link="App\Services\DragDropService.cs" />
