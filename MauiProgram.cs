@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using CommunityToolkit.Maui;
 using Microsoft.Maui.LifecycleEvents;
@@ -10,6 +12,7 @@ using organizadorCapitulos.Infrastructure.Repositories;
 using organizadorCapitulos.Infrastructure.Services;
 using OrganizadorCapitulos.Maui.Services;
 using OrganizadorCapitulos.Maui.Services.Interfaces;
+using OrganizadorCapitulos.Maui.Services.Workflows;
 using OrganizadorCapitulos.Maui.ViewModels;
 
 namespace OrganizadorCapitulos.Maui;
@@ -45,9 +48,20 @@ public static class MauiProgram
 
         builder.Services.AddTransient<FileOrganizerService>();
         builder.Services.AddTransient<RenameStrategyFactory>();
+        builder.Services.AddTransient<FileAnalysisWorkflow>();
+        builder.Services.AddTransient<FileOrganizationWorkflow>();
+        builder.Services.AddTransient<TmdbMatchingWorkflow>();
         builder.Services.AddSingleton<IMetadataService, TmdbMetadataService>(_ =>
-            new TmdbMetadataService(new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) }));
-        builder.Services.AddTransient<IAIService, PythonAIService>();
+        {
+            var handler = new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Brotli
+            };
+            var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+            return new TmdbMetadataService(httpClient);
+        });
+        builder.Services.AddSingleton<IAIService, NativeHeuristicAIService>();
         // ThemeService must be a singleton so ViewModels (singletons) observe the same instance
         builder.Services.AddSingleton<IThemeService, ThemeService>();
 

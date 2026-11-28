@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,38 +12,93 @@ namespace organizadorCapitulos.Infrastructure.Repositories
 {
     public class FileRepository : IFileRepository
     {
-        private readonly string[] _videoExtensions = { ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".mpeg", ".webm" };
+        private static readonly string[] VideoExtensions =
+            { ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".mpeg", ".webm", ".m4v" };
+
+        private static readonly FrozenSet<string> VideoExtensionSet =
+            VideoExtensions.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public async Task<IEnumerable<string>> GetVideoFilesAsync(IEnumerable<string> folders, CancellationToken ct = default)
         {
             return await Task.Run(() =>
             {
-                var extensions = new HashSet<string>(_videoExtensions.Select(ext => ext.ToLower()));
+                const FileAttributes hiddenSystem = FileAttributes.Hidden | FileAttributes.System;
                 var allFiles = new List<string>();
+                var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var stack = new Stack<string>();
+                var enumOptions = new EnumerationOptions
+                {
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.None
+                };
 
                 foreach (string folder in folders)
                 {
+                    if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) continue;
+                    var canonicalRoot = GetCanonicalDirectoryPath(new DirectoryInfo(folder));
+                    if (visited.Add(canonicalRoot))
+                    {
+                        stack.Push(folder);
+                    }
+                }
+
+                while (stack.Count > 0)
+                {
                     ct.ThrowIfCancellationRequested();
+                    var currentDir = stack.Pop();
+
                     try
                     {
-                        var enumOptions = new EnumerationOptions
+                        foreach (var file in Directory.EnumerateFiles(currentDir, "*.*", enumOptions))
                         {
-                            RecurseSubdirectories = true,
-                            IgnoreInaccessible = true,
-                            AttributesToSkip = FileAttributes.ReparsePoint
-                        };
-                        var folderFiles = Directory.EnumerateFiles(folder, "*.*", enumOptions)
-                            .Where(file => extensions.Contains(Path.GetExtension(file).ToLower()));
-                        allFiles.AddRange(folderFiles);
+                            if (VideoExtensionSet.Contains(Path.GetExtension(file)))
+                            {
+                                allFiles.Add(file);
+                            }
+                        }
+
+                        var dirInfo = new DirectoryInfo(currentDir);
+                        foreach (var subDir in dirInfo.EnumerateDirectories("*", enumOptions))
+                        {
+                            if ((subDir.Attributes & hiddenSystem) == hiddenSystem) continue;
+
+                            var canonicalSub = GetCanonicalDirectoryPath(subDir);
+                            if (visited.Add(canonicalSub))
+                            {
+                                stack.Push(subDir.FullName);
+                            }
+                        }
                     }
                     catch (System.Exception ex)
                     {
                         // Log and continue with remaining folders instead of aborting
-                        System.Diagnostics.Debug.WriteLine($"[FileRepository] Error al acceder a {folder}: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[FileRepository] Error al acceder a {currentDir}: {ex.Message}");
                     }
                 }
+
                 return allFiles;
             }, ct);
+        }
+
+        private static string GetCanonicalDirectoryPath(DirectoryInfo dirInfo)
+        {
+            try
+            {
+                if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    var target = dirInfo.ResolveLinkTarget(returnFinalTarget: true);
+                    if (target != null && !string.IsNullOrWhiteSpace(target.FullName))
+                    {
+                        return Path.GetFullPath(target.FullName);
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback to full path for OneDrive cloud placeholders or restricted links
+            }
+
+            return Path.GetFullPath(dirInfo.FullName);
         }
 
         public async Task MoveFileAsync(string sourcePath, string destinationPath, CancellationToken ct = default)
@@ -82,6 +139,6 @@ namespace organizadorCapitulos.Infrastructure.Repositories
             }
         }
 
-        public string[] GetVideoExtensions() => _videoExtensions;
+        public string[] GetVideoExtensions() => (string[])VideoExtensions.Clone();
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,10 +14,10 @@ namespace organizadorCapitulos.Application.Services
 {
     public class FileOrganizerService
     {
-        private static readonly HashSet<string> CompanionExtensions = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly FrozenSet<string> CompanionExtensions = new[]
         {
             ".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx", ".nfo"
-        };
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         private readonly IFileRepository fileRepository;
         private readonly IProgressObserver? progressObserver;
@@ -25,6 +26,96 @@ namespace organizadorCapitulos.Application.Services
         {
             this.fileRepository = fileRepository;
             this.progressObserver = progressObserver;
+        }
+
+        public sealed class CompanionIndex
+        {
+            private readonly Dictionary<string, List<(string path, string suffix)>> _byVideoPath;
+
+            internal CompanionIndex(Dictionary<string, List<(string path, string suffix)>> byVideoPath)
+            {
+                _byVideoPath = byVideoPath;
+            }
+
+            public IReadOnlyList<(string path, string suffix)> GetCompanions(string videoPath)
+            {
+                return _byVideoPath.TryGetValue(videoPath, out var list)
+                    ? list
+                    : Array.Empty<(string path, string suffix)>();
+            }
+        }
+
+        public static CompanionIndex BuildCompanionIndex(IEnumerable<string> videoPaths)
+        {
+            var byVideoPath = new Dictionary<string, List<(string path, string suffix)>>(StringComparer.OrdinalIgnoreCase);
+            var videosByDirectory = new Dictionary<string, List<(string fullPath, string baseName)>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var videoPath in videoPaths)
+            {
+                if (string.IsNullOrWhiteSpace(videoPath)) continue;
+                var dir = Path.GetDirectoryName(videoPath);
+                if (string.IsNullOrEmpty(dir)) continue;
+
+                if (!videosByDirectory.TryGetValue(dir, out var list))
+                {
+                    list = new List<(string, string)>();
+                    videosByDirectory[dir] = list;
+                }
+                list.Add((videoPath, Path.GetFileNameWithoutExtension(videoPath)));
+            }
+
+            foreach (var (directory, videos) in videosByDirectory)
+            {
+                if (!Directory.Exists(directory)) continue;
+
+                var byBaseName = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (fullPath, baseName) in videos)
+                {
+                    if (!byBaseName.TryGetValue(baseName, out var videoList))
+                    {
+                        videoList = new List<string>();
+                        byBaseName[baseName] = videoList;
+                    }
+                    videoList.Add(fullPath);
+                }
+
+                var lookup = byBaseName.GetAlternateLookup<ReadOnlySpan<char>>();
+                try
+                {
+                    foreach (var candidate in Directory.EnumerateFiles(directory))
+                    {
+                        var ext = Path.GetExtension(candidate);
+                        if (!CompanionExtensions.Contains(ext)) continue;
+
+                        var candidateName = Path.GetFileName(candidate);
+                        int maxPrefixLen = candidateName.Length - ext.Length;
+                        int dotIdx = candidateName.IndexOf('.');
+                        while (dotIdx > 0 && dotIdx <= maxPrefixLen)
+                        {
+                            if (lookup.TryGetValue(candidateName.AsSpan(0, dotIdx), out var matchingVideos))
+                            {
+                                var suffix = candidateName[dotIdx..];
+                                foreach (var videoPath in matchingVideos)
+                                {
+                                    if (!byVideoPath.TryGetValue(videoPath, out var companions))
+                                    {
+                                        companions = new List<(string, string)>();
+                                        byVideoPath[videoPath] = companions;
+                                    }
+                                    companions.Add((candidate, suffix));
+                                }
+                            }
+                            dotIdx = candidateName.IndexOf('.', dotIdx + 1);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore directory access issues for companions
+                }
+            }
+
+            return new CompanionIndex(byVideoPath);
         }
 
         public async Task<List<string>> LoadVideoFilesAsync(IEnumerable<string> folders, CancellationToken ct = default)
@@ -40,13 +131,23 @@ namespace organizadorCapitulos.Application.Services
             return newPath;
         }
 
-        public async Task<(string newPath, List<(string oldPath, string newPath)> companionMoves)> RenameFileWithCompanionsAsync(
+        public Task<(string newPath, List<(string oldPath, string newPath)> companionMoves)> RenameFileWithCompanionsAsync(
             string sourcePath,
             ChapterInfo chapterInfo,
             IRenameStrategy strategy,
             CancellationToken ct = default,
             string? fileNameTemplate = null,
-            bool renameCompanions = true)
+            bool renameCompanions = true) =>
+            RenameFileWithCompanionsAsync(sourcePath, chapterInfo, strategy, ct, fileNameTemplate, renameCompanions, companionIndex: null);
+
+        public async Task<(string newPath, List<(string oldPath, string newPath)> companionMoves)> RenameFileWithCompanionsAsync(
+            string sourcePath,
+            ChapterInfo chapterInfo,
+            IRenameStrategy strategy,
+            CancellationToken ct,
+            string? fileNameTemplate,
+            bool renameCompanions,
+            CompanionIndex? companionIndex)
         {
             if (!chapterInfo.IsValid())
             {
@@ -65,7 +166,11 @@ namespace organizadorCapitulos.Application.Services
             }
 
             var companionMoves = new List<(string oldPath, string newPath)>();
-            var companions = renameCompanions ? FindCompanionFiles(sourcePath) : new List<(string path, string suffix)>();
+            IReadOnlyList<(string path, string suffix)> companions = !renameCompanions
+                ? Array.Empty<(string path, string suffix)>()
+                : companionIndex != null
+                    ? companionIndex.GetCompanions(sourcePath)
+                    : FindCompanionFiles(sourcePath);
 
             if (!string.Equals(sourcePath, destinationPath, StringComparison.OrdinalIgnoreCase))
             {
@@ -76,6 +181,7 @@ namespace organizadorCapitulos.Application.Services
             foreach (var (companionPath, suffix) in companions)
             {
                 ct.ThrowIfCancellationRequested();
+                if (companionIndex != null && !fileRepository.FileExists(companionPath)) continue;
                 string companionDest = Path.Combine(directory, newBaseName + suffix);
                 if (string.Equals(companionPath, companionDest, StringComparison.OrdinalIgnoreCase)) continue;
                 if (fileRepository.FileExists(companionDest))
@@ -112,6 +218,9 @@ namespace organizadorCapitulos.Application.Services
                 Directory.CreateDirectory(destinationRoot);
             }
 
+            var companionIndex = BuildCompanionIndex(items.Select(i => i.sourcePath));
+            var movedCompanions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             int totalFiles = items.Count;
             int processedFiles = 0;
 
@@ -133,7 +242,7 @@ namespace organizadorCapitulos.Application.Services
 
                 progressObserver?.UpdateProgress(processedFiles, totalFiles, fileName);
 
-                var companions = FindCompanionFiles(sourcePath);
+                var companions = companionIndex.GetCompanions(sourcePath);
 
                 // Ensure we don't overwrite existing files
                 if (!string.Equals(sourcePath, destinationPath, StringComparison.OrdinalIgnoreCase) && fileRepository.FileExists(destinationPath))
@@ -151,6 +260,7 @@ namespace organizadorCapitulos.Application.Services
                 foreach (var (companionPath, suffix) in companions)
                 {
                     ct.ThrowIfCancellationRequested();
+                    if (!movedCompanions.Add(companionPath)) continue;
                     string companionDest = Path.Combine(targetFolder, newBaseName + suffix);
                     if (string.Equals(companionPath, companionDest, StringComparison.OrdinalIgnoreCase)) continue;
                     if (fileRepository.FileExists(companionDest))

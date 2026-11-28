@@ -1,7 +1,26 @@
+using System;
+using System.Buffers;
+using System.IO;
+using System.Text.RegularExpressions;
+
 namespace organizadorCapitulos.Core.Entities
 {
-    public class ChapterInfo
+    public partial class ChapterInfo
     {
+        private static readonly SearchValues<char> InvalidFileNameChars = SearchValues.Create(Path.GetInvalidFileNameChars());
+
+        [GeneratedRegex(@"\(\s*\)", RegexOptions.NonBacktracking)]
+        private static partial Regex EmptyParensRegex();
+
+        [GeneratedRegex(@"\[\s*\]", RegexOptions.NonBacktracking)]
+        private static partial Regex EmptyBracketsRegex();
+
+        [GeneratedRegex(@"\s*-\s*-\s*", RegexOptions.NonBacktracking)]
+        private static partial Regex DoubleDashRegex();
+
+        [GeneratedRegex(@"\s{2,}", RegexOptions.NonBacktracking)]
+        private static partial Regex MultiSpaceRegex();
+
         public int Season { get; set; }
         public int Episode { get; set; }
         public string Title { get; set; } = string.Empty;
@@ -59,10 +78,10 @@ namespace organizadorCapitulos.Core.Entities
                 .Replace("{Year}", Year > 0 ? Year.ToString() : string.Empty);
 
             // Clean up empty parentheses, double spaces, or trailing dashes from empty substitutions
-            result = System.Text.RegularExpressions.Regex.Replace(result, @"\(\s*\)", string.Empty);
-            result = System.Text.RegularExpressions.Regex.Replace(result, @"\[\s*\]", string.Empty);
-            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s*-\s*-\s*", " - ");
-            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s{2,}", " ").Trim().Trim('-').Trim();
+            result = EmptyParensRegex().Replace(result, string.Empty);
+            result = EmptyBracketsRegex().Replace(result, string.Empty);
+            result = DoubleDashRegex().Replace(result, " - ");
+            result = MultiSpaceRegex().Replace(result, " ").Trim().Trim('-').Trim();
 
             return SanitizeFileName(result) + extension;
         }
@@ -70,8 +89,17 @@ namespace organizadorCapitulos.Core.Entities
         public static string SanitizeFileName(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return input;
-            var invalid = System.IO.Path.GetInvalidFileNameChars();
-            return string.Concat(input.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c));
+            if (input.AsSpan().IndexOfAny(InvalidFileNameChars) < 0) return input;
+
+            return string.Create(input.Length, input, static (span, src) =>
+            {
+                var invalid = InvalidFileNameChars;
+                for (int i = 0; i < src.Length; i++)
+                {
+                    char c = src[i];
+                    span[i] = invalid.Contains(c) ? '_' : c;
+                }
+            });
         }
     }
 }

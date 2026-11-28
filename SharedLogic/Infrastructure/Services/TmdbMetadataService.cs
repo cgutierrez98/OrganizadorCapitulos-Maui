@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -13,14 +15,25 @@ using organizadorCapitulos.Core.Interfaces.Services;
 
 namespace organizadorCapitulos.Infrastructure.Services
 {
-    public class TmdbMetadataService : IMetadataService
+    public partial class TmdbMetadataService : IMetadataService
     {
+        private sealed record CachedEpisode(
+            int Season,
+            int Episode,
+            string Title,
+            string NormalizedTitle,
+            HashSet<string> Tokens);
+
+        [GeneratedRegex(@"\s{2,}", RegexOptions.NonBacktracking)]
+        private static partial Regex MultiSpaceRegex();
+
         private string? _apiKey;
         private string _language = "es-ES";
         private readonly HttpClient _http;
 
-        // Session-level cache: seriesId -> list of (season, episode, title)
-        private readonly Dictionary<int, List<(int season, int episode, string title)>> _episodeCache = new();
+        // Thread-safe session-level caches
+        private readonly ConcurrentDictionary<(int seriesId, int season, string language), Dictionary<int, string>> _seasonCache = new();
+        private readonly ConcurrentDictionary<(int seriesId, string language), List<CachedEpisode>> _allEpisodesCache = new();
 
         public TmdbMetadataService(HttpClient httpClient)
         {
@@ -54,7 +67,8 @@ namespace organizadorCapitulos.Infrastructure.Services
             if (!string.Equals(_language, normalized, StringComparison.OrdinalIgnoreCase))
             {
                 _language = normalized;
-                _episodeCache.Clear();
+                _seasonCache.Clear();
+                _allEpisodesCache.Clear();
             }
         }
 
@@ -79,17 +93,32 @@ namespace organizadorCapitulos.Infrastructure.Services
             return relativePath;
         }
 
+        private async Task<HttpResponseMessage> SendWithRetryAsync(string url, CancellationToken ct)
+        {
+            var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var delay = resp.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1);
+                if (delay < TimeSpan.FromMilliseconds(100)) delay = TimeSpan.FromMilliseconds(100);
+                if (delay > TimeSpan.FromSeconds(5)) delay = TimeSpan.FromSeconds(5);
+                resp.Dispose();
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+                resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
+            }
+            return resp;
+        }
+
         public async Task<List<SeriesSearchResult>> SearchSeriesAsync(string query, CancellationToken ct = default)
         {
             if (!IsConfigured()) return new List<SeriesSearchResult>();
             if (string.IsNullOrWhiteSpace(query)) return new List<SeriesSearchResult>();
 
             string url = BuildUrl($"search/tv?query={Uri.EscapeDataString(query)}&language={Uri.EscapeDataString(_language)}");
-            using var resp = await _http.GetAsync(url, ct);
+            using var resp = await SendWithRetryAsync(url, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return new List<SeriesSearchResult>();
 
-            using var stream = await resp.Content.ReadAsStreamAsync(ct);
-            var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             var results = new List<SeriesSearchResult>();
             if (doc.RootElement.TryGetProperty("results", out var arr) && arr.ValueKind == JsonValueKind.Array)
             {
@@ -115,11 +144,11 @@ namespace organizadorCapitulos.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(query)) return new List<MovieSearchResult>();
 
             string url = BuildUrl($"search/movie?query={Uri.EscapeDataString(query)}&language={Uri.EscapeDataString(_language)}");
-            using var resp = await _http.GetAsync(url, ct);
+            using var resp = await SendWithRetryAsync(url, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return new List<MovieSearchResult>();
 
-            using var stream = await resp.Content.ReadAsStreamAsync(ct);
-            var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             var results = new List<MovieSearchResult>();
             if (doc.RootElement.TryGetProperty("results", out var arr) && arr.ValueKind == JsonValueKind.Array)
             {
@@ -142,22 +171,58 @@ namespace organizadorCapitulos.Infrastructure.Services
         public async Task<string?> GetEpisodeTitleAsync(int seriesId, int season, int episode, CancellationToken ct = default)
         {
             if (!IsConfigured()) return null;
-            var title = await FetchEpisodeNameAsync(seriesId, season, episode, _language, ct);
+            var title = await FetchEpisodeNameAsync(seriesId, season, episode, _language, ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(title) && !string.Equals(_language, "en-US", StringComparison.OrdinalIgnoreCase))
             {
-                title = await FetchEpisodeNameAsync(seriesId, season, episode, "en-US", ct);
+                title = await FetchEpisodeNameAsync(seriesId, season, episode, "en-US", ct).ConfigureAwait(false);
             }
             return title;
         }
 
         private async Task<string?> FetchEpisodeNameAsync(int seriesId, int season, int episode, string language, CancellationToken ct)
         {
-            string url = BuildUrl($"tv/{seriesId}/season/{season}/episode/{episode}?language={Uri.EscapeDataString(language)}");
-            using var resp = await _http.GetAsync(url, ct);
-            if (!resp.IsSuccessStatusCode) return null;
+            var cacheKey = (seriesId, season, language);
+            if (_seasonCache.TryGetValue(cacheKey, out var cachedSeason))
+            {
+                return cachedSeason.TryGetValue(episode, out var cachedTitle) && !string.IsNullOrWhiteSpace(cachedTitle)
+                    ? cachedTitle
+                    : null;
+            }
 
-            using var stream = await resp.Content.ReadAsStreamAsync(ct);
-            var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            string url = BuildUrl($"tv/{seriesId}/season/{season}?language={Uri.EscapeDataString(language)}");
+            using var resp = await SendWithRetryAsync(url, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (resp.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _seasonCache[cacheKey] = new Dictionary<int, string>();
+                }
+                return null;
+            }
+
+            using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+
+            if (doc.RootElement.TryGetProperty("episodes", out var eps) && eps.ValueKind == JsonValueKind.Array)
+            {
+                var seasonEpisodes = new Dictionary<int, string>();
+                foreach (var ep in eps.EnumerateArray())
+                {
+                    var epNumber = ep.TryGetProperty("episode_number", out var enn) ? enn.GetInt32() : 0;
+                    var epName = ep.TryGetProperty("name", out var en) ? en.GetString() ?? string.Empty : string.Empty;
+                    if (epNumber > 0)
+                    {
+                        seasonEpisodes[epNumber] = epName;
+                    }
+                }
+
+                _seasonCache[cacheKey] = seasonEpisodes;
+                return seasonEpisodes.TryGetValue(episode, out var title) && !string.IsNullOrWhiteSpace(title)
+                    ? title
+                    : null;
+            }
+
+            // Fallback compatibility for direct episode JSON responses
             return doc.RootElement.TryGetProperty("name", out var name) ? name.GetString() : null;
         }
 
@@ -166,24 +231,22 @@ namespace organizadorCapitulos.Infrastructure.Services
             if (!IsConfigured()) return null;
             if (string.IsNullOrWhiteSpace(title)) return null;
 
-            var allEpisodes = await GetOrFetchAllEpisodesAsync(seriesId, ct);
+            var allEpisodes = await GetOrFetchAllEpisodesAsync(seriesId, ct).ConfigureAwait(false);
             string normalizedQuery = NormalizeForMatch(title);
             if (string.IsNullOrWhiteSpace(normalizedQuery)) return null;
 
-            // 1. Exact or bidirectional substring match on normalized text (ignores accents & punctuation)
-            var directMatch = allEpisodes.FirstOrDefault(e =>
+            // 1. Exact or bidirectional substring match on pre-normalized text (ignores accents & punctuation)
+            foreach (var ep in allEpisodes)
             {
-                if (string.IsNullOrWhiteSpace(e.title)) return false;
-                string normalizedEp = NormalizeForMatch(e.title);
-                if (string.IsNullOrWhiteSpace(normalizedEp)) return false;
-                return normalizedEp.Contains(normalizedQuery, StringComparison.Ordinal) ||
-                       normalizedQuery.Contains(normalizedEp, StringComparison.Ordinal);
-            });
+                if (string.IsNullOrWhiteSpace(ep.NormalizedTitle)) continue;
+                if (ep.NormalizedTitle.Contains(normalizedQuery, StringComparison.Ordinal) ||
+                    normalizedQuery.Contains(ep.NormalizedTitle, StringComparison.Ordinal))
+                {
+                    return (ep.Season, ep.Episode, ep.Title);
+                }
+            }
 
-            if (directMatch != default)
-                return directMatch;
-
-            // 2. Token overlap fuzzy fallback (requires at least 60% overlap)
+            // 2. Token overlap fuzzy fallback (requires at least 60% overlap) using pre-computed token sets
             var queryTokens = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
             if (queryTokens.Count == 0) return null;
 
@@ -192,16 +255,19 @@ namespace organizadorCapitulos.Infrastructure.Services
 
             foreach (var ep in allEpisodes)
             {
-                if (string.IsNullOrWhiteSpace(ep.title)) continue;
-                var epTokens = NormalizeForMatch(ep.title).Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
-                if (epTokens.Count == 0) continue;
+                if (ep.Tokens.Count == 0) continue;
 
-                int intersection = epTokens.Count(t => queryTokens.Contains(t));
-                double score = (double)intersection / Math.Max(epTokens.Count, 1);
+                int intersection = 0;
+                foreach (var token in ep.Tokens)
+                {
+                    if (queryTokens.Contains(token)) intersection++;
+                }
+
+                double score = (double)intersection / Math.Max(ep.Tokens.Count, 1);
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    best = ep;
+                    best = (ep.Season, ep.Episode, ep.Title);
                 }
             }
 
@@ -211,7 +277,7 @@ namespace organizadorCapitulos.Infrastructure.Services
         public async Task<ChapterInfo?> GetEpisodeMetadataAsync(int seriesId, int season, int episode, CancellationToken ct = default)
         {
             if (!IsConfigured()) return null;
-            var title = await GetEpisodeTitleAsync(seriesId, season, episode, ct);
+            var title = await GetEpisodeTitleAsync(seriesId, season, episode, ct).ConfigureAwait(false);
             if (title == null) return null;
             return new ChapterInfo
             {
@@ -224,23 +290,24 @@ namespace organizadorCapitulos.Infrastructure.Services
         /// <summary>
         /// Returns all episodes for a series from the session cache, fetching seasons in parallel (max 4 concurrent).
         /// </summary>
-        private async Task<List<(int season, int episode, string title)>> GetOrFetchAllEpisodesAsync(int seriesId, CancellationToken ct)
+        private async Task<List<CachedEpisode>> GetOrFetchAllEpisodesAsync(int seriesId, CancellationToken ct)
         {
-            if (_episodeCache.TryGetValue(seriesId, out var cached))
+            var allKey = (seriesId, _language);
+            if (_allEpisodesCache.TryGetValue(allKey, out var cached))
                 return cached;
 
-            var allEpisodes = new List<(int season, int episode, string title)>();
+            var allEpisodes = new List<CachedEpisode>();
 
             string seriesUrl = BuildUrl($"tv/{seriesId}?language={Uri.EscapeDataString(_language)}");
-            using var sresp = await _http.GetAsync(seriesUrl, ct);
+            using var sresp = await SendWithRetryAsync(seriesUrl, ct).ConfigureAwait(false);
             if (!sresp.IsSuccessStatusCode)
             {
-                _episodeCache[seriesId] = allEpisodes;
+                _allEpisodesCache[allKey] = allEpisodes;
                 return allEpisodes;
             }
 
-            using var sstream = await sresp.Content.ReadAsStreamAsync(ct);
-            var sdoc = await JsonDocument.ParseAsync(sstream, cancellationToken: ct);
+            using var sstream = await sresp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var sdoc = await JsonDocument.ParseAsync(sstream, cancellationToken: ct).ConfigureAwait(false);
             int seasonsCount = sdoc.RootElement.TryGetProperty("number_of_seasons", out var ns) && ns.ValueKind == JsonValueKind.Number
                 ? ns.GetInt32()
                 : 1;
@@ -248,25 +315,37 @@ namespace organizadorCapitulos.Infrastructure.Services
             using var throttler = new SemaphoreSlim(4);
             var seasonTasks = Enumerable.Range(1, seasonsCount).Select(async seasonNum =>
             {
-                await throttler.WaitAsync(ct);
+                await throttler.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
                     ct.ThrowIfCancellationRequested();
-                    var seasonEps = new List<(int season, int episode, string title)>();
+                    var seasonEps = new List<CachedEpisode>();
                     string seasonUrl = BuildUrl($"tv/{seriesId}/season/{seasonNum}?language={Uri.EscapeDataString(_language)}");
-                    using var resp = await _http.GetAsync(seasonUrl, ct);
+                    using var resp = await SendWithRetryAsync(seasonUrl, ct).ConfigureAwait(false);
                     if (!resp.IsSuccessStatusCode) return seasonEps;
 
-                    using var stream = await resp.Content.ReadAsStreamAsync(ct);
-                    var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                    using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                    using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
                     if (doc.RootElement.TryGetProperty("episodes", out var eps) && eps.ValueKind == JsonValueKind.Array)
                     {
+                        var seasonMap = new Dictionary<int, string>();
                         foreach (var ep in eps.EnumerateArray())
                         {
                             var epName = ep.TryGetProperty("name", out var en) ? en.GetString() ?? string.Empty : string.Empty;
                             var epNumber = ep.TryGetProperty("episode_number", out var enn) ? enn.GetInt32() : 0;
-                            seasonEps.Add((seasonNum, epNumber, epName));
+                            if (epNumber > 0)
+                            {
+                                seasonMap[epNumber] = epName;
+                            }
+
+                            var normalized = NormalizeForMatch(epName);
+                            var tokens = string.IsNullOrWhiteSpace(normalized)
+                                ? new HashSet<string>()
+                                : normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+
+                            seasonEps.Add(new CachedEpisode(seasonNum, epNumber, epName, normalized, tokens));
                         }
+                        _seasonCache[(seriesId, seasonNum, _language)] = seasonMap;
                     }
                     return seasonEps;
                 }
@@ -276,13 +355,13 @@ namespace organizadorCapitulos.Infrastructure.Services
                 }
             }).ToList();
 
-            var results = await Task.WhenAll(seasonTasks);
+            var results = await Task.WhenAll(seasonTasks).ConfigureAwait(false);
             foreach (var list in results)
             {
                 allEpisodes.AddRange(list);
             }
 
-            _episodeCache[seriesId] = allEpisodes;
+            _allEpisodesCache[allKey] = allEpisodes;
             return allEpisodes;
         }
 
@@ -298,7 +377,7 @@ namespace organizadorCapitulos.Infrastructure.Services
                     sb.Append(char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : ' ');
                 }
             }
-            return Regex.Replace(sb.ToString(), @"\s{2,}", " ").Trim();
+            return MultiSpaceRegex().Replace(sb.ToString(), " ").Trim();
         }
     }
 }
