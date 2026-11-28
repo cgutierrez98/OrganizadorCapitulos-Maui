@@ -33,7 +33,7 @@ namespace OrganizadorCapitulos.Maui.Services
                 if (!string.IsNullOrEmpty(saved))
                 {
                     _isDarkTheme = saved == "dark";
-                    await ApplyThemeAsync();
+                    await ApplyThemeAsync(persist: false);
                     return;
                 }
 
@@ -46,7 +46,7 @@ namespace OrganizadorCapitulos.Maui.Services
                         if (savedTheme == "dark")
                         {
                             _isDarkTheme = true;
-                            await ApplyThemeAsync();
+                            await ApplyThemeAsync(persist: true);
                         }
                     }
                 }
@@ -64,10 +64,10 @@ namespace OrganizadorCapitulos.Maui.Services
         public async Task ToggleThemeAsync()
         {
             _isDarkTheme = !_isDarkTheme;
-            await ApplyThemeAsync();
+            await ApplyThemeAsync(persist: true);
         }
 
-        private async Task ApplyThemeAsync()
+        private async Task ApplyThemeAsync(bool persist)
         {
             try
             {
@@ -78,8 +78,6 @@ namespace OrganizadorCapitulos.Maui.Services
                     // Prefer a small JS helper instead of eval for safety and reliability
                     if (_jsRuntime != null)
                     {
-                        // Emit a debug message first to help diagnose whether JS interop is reachable
-                        try { await _jsRuntime.InvokeVoidAsync("console.debug", "ThemeService.setDataTheme", theme); } catch { }
                         await _jsRuntime.InvokeVoidAsync("setDataTheme", theme);
                     }
                 }
@@ -88,8 +86,11 @@ namespace OrganizadorCapitulos.Maui.Services
                     // Ignore JS interop errors (non-web platforms)
                 }
 
-                // Persist theme cross-platform via SettingsService
-                _settingsService.Theme = theme;
+                if (persist)
+                {
+                    // Persist theme cross-platform via SettingsService
+                    _settingsService.Theme = theme;
+                }
 
                 // Notify subscribers about the change
                 ThemeChanged?.Invoke(_isDarkTheme);

@@ -1,7 +1,11 @@
+using System;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace OrganizadorCapitulos.Maui.Services
 {
@@ -31,15 +35,25 @@ namespace OrganizadorCapitulos.Maui.Services
     {
         private readonly string _settingsPath;
         private readonly SemaphoreSlim _saveLock = new(1, 1);
+        private readonly object _debounceLock = new();
+        private readonly ILogger<SettingsService> _logger;
         private AppSettings _settings = new();
+        private string _decryptedApiKey = "";
+        private CancellationTokenSource? _debounceCts;
+        private const int SaveDebounceMs = 200;
         private static readonly JsonSerializerOptions _jsonOptions = new()
         {
             WriteIndented = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        public SettingsService(string? settingsDirectory = null)
+        public SettingsService() : this(null, null) { }
+
+        public SettingsService(ILogger<SettingsService> logger) : this(null, logger) { }
+
+        public SettingsService(string? settingsDirectory, ILogger<SettingsService>? logger = null)
         {
+            _logger = logger ?? NullLogger<SettingsService>.Instance;
             // Store settings in user's AppData folder
             var appFolder = settingsDirectory;
             if (string.IsNullOrWhiteSpace(appFolder))
@@ -47,23 +61,26 @@ namespace OrganizadorCapitulos.Maui.Services
                 var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 appFolder = Path.Combine(appDataPath, "OrganizadorCapitulos");
             }
-            
+
             if (!Directory.Exists(appFolder))
             {
                 Directory.CreateDirectory(appFolder);
             }
-            
+
             _settingsPath = Path.Combine(appFolder, "settings.json");
             LoadSettings();
         }
 
         public string TmdbApiKey
         {
-            get => DecryptApiKey(_settings.TmdbApiKey);
+            get => _decryptedApiKey;
             set
             {
-                _settings.TmdbApiKey = EncryptApiKey(value);
-                _ = SaveSettingsAsync();
+                var normalized = value ?? "";
+                if (string.Equals(_decryptedApiKey, normalized, StringComparison.Ordinal)) return;
+                _decryptedApiKey = normalized;
+                _settings.TmdbApiKey = EncryptApiKey(normalized);
+                ScheduleSave();
             }
         }
 
@@ -72,8 +89,9 @@ namespace OrganizadorCapitulos.Maui.Services
             get => _settings.Theme;
             set
             {
+                if (string.Equals(_settings.Theme, value, StringComparison.Ordinal)) return;
                 _settings.Theme = value;
-                _ = SaveSettingsAsync();
+                ScheduleSave();
             }
         }
 
@@ -82,8 +100,10 @@ namespace OrganizadorCapitulos.Maui.Services
             get => _settings.DefaultOutputFolder;
             set
             {
-                _settings.DefaultOutputFolder = string.IsNullOrWhiteSpace(value) ? null : value;
-                _ = SaveSettingsAsync();
+                var normalized = string.IsNullOrWhiteSpace(value) ? null : value;
+                if (string.Equals(_settings.DefaultOutputFolder, normalized, StringComparison.Ordinal)) return;
+                _settings.DefaultOutputFolder = normalized;
+                ScheduleSave();
             }
         }
 
@@ -92,8 +112,10 @@ namespace OrganizadorCapitulos.Maui.Services
             get => _settings.FileNameTemplate;
             set
             {
-                _settings.FileNameTemplate = string.IsNullOrWhiteSpace(value) ? null : value;
-                _ = SaveSettingsAsync();
+                var normalized = string.IsNullOrWhiteSpace(value) ? null : value;
+                if (string.Equals(_settings.FileNameTemplate, normalized, StringComparison.Ordinal)) return;
+                _settings.FileNameTemplate = normalized;
+                ScheduleSave();
             }
         }
 
@@ -102,8 +124,10 @@ namespace OrganizadorCapitulos.Maui.Services
             get => string.IsNullOrWhiteSpace(_settings.TmdbLanguage) ? "es-ES" : _settings.TmdbLanguage;
             set
             {
-                _settings.TmdbLanguage = string.IsNullOrWhiteSpace(value) ? "es-ES" : value.Trim();
-                _ = SaveSettingsAsync();
+                var normalized = string.IsNullOrWhiteSpace(value) ? "es-ES" : value.Trim();
+                if (string.Equals(_settings.TmdbLanguage, normalized, StringComparison.Ordinal)) return;
+                _settings.TmdbLanguage = normalized;
+                ScheduleSave();
             }
         }
 
@@ -112,8 +136,9 @@ namespace OrganizadorCapitulos.Maui.Services
             get => _settings.OrganizeIntoSubfolders;
             set
             {
+                if (_settings.OrganizeIntoSubfolders == value) return;
                 _settings.OrganizeIntoSubfolders = value;
-                _ = SaveSettingsAsync();
+                ScheduleSave();
             }
         }
 
@@ -122,9 +147,57 @@ namespace OrganizadorCapitulos.Maui.Services
             get => _settings.RenameCompanionFiles;
             set
             {
+                if (_settings.RenameCompanionFiles == value) return;
                 _settings.RenameCompanionFiles = value;
-                _ = SaveSettingsAsync();
+                ScheduleSave();
             }
+        }
+
+        /// <summary>Applies multiple setting changes and schedules a single disk write.</summary>
+        public void Update(Action<AppSettings> mutate)
+        {
+            var plainKeyBefore = _decryptedApiKey;
+            var editable = new AppSettings
+            {
+                TmdbApiKey = plainKeyBefore,
+                Theme = _settings.Theme,
+                DefaultOutputFolder = _settings.DefaultOutputFolder,
+                FileNameTemplate = _settings.FileNameTemplate,
+                TmdbLanguage = _settings.TmdbLanguage,
+                OrganizeIntoSubfolders = _settings.OrganizeIntoSubfolders,
+                RenameCompanionFiles = _settings.RenameCompanionFiles
+            };
+
+            mutate(editable);
+
+            _decryptedApiKey = editable.TmdbApiKey ?? "";
+            _settings.TmdbApiKey = EncryptApiKey(_decryptedApiKey);
+            _settings.Theme = string.IsNullOrWhiteSpace(editable.Theme) ? "light" : editable.Theme;
+            _settings.DefaultOutputFolder = string.IsNullOrWhiteSpace(editable.DefaultOutputFolder) ? null : editable.DefaultOutputFolder;
+            _settings.FileNameTemplate = string.IsNullOrWhiteSpace(editable.FileNameTemplate) ? null : editable.FileNameTemplate.Trim();
+            _settings.TmdbLanguage = string.IsNullOrWhiteSpace(editable.TmdbLanguage) ? "es-ES" : editable.TmdbLanguage.Trim();
+            _settings.OrganizeIntoSubfolders = editable.OrganizeIntoSubfolders;
+            _settings.RenameCompanionFiles = editable.RenameCompanionFiles;
+
+            ScheduleSave();
+        }
+
+        public async Task FlushAsync()
+        {
+            CancellationTokenSource? cts;
+            lock (_debounceLock)
+            {
+                cts = _debounceCts;
+                _debounceCts = null;
+            }
+
+            if (cts != null)
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
+
+            await SaveSettingsCoreAsync().ConfigureAwait(false);
         }
 
         // ── DPAPI helpers ─────────────────────────────────────────────────────
@@ -151,7 +224,7 @@ namespace OrganizadorCapitulos.Maui.Services
 #endif
         }
 
-        private static string DecryptApiKey(string stored)
+        private string DecryptApiKey(string stored)
         {
             if (string.IsNullOrEmpty(stored)) return "";
 #if WINDOWS
@@ -164,8 +237,9 @@ namespace OrganizadorCapitulos.Maui.Services
                         encrypted, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
                     return System.Text.Encoding.UTF8.GetString(decrypted);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    _logger.LogWarning(ex, "Cannot decrypt stored TMDB API key via DPAPI");
                     return ""; // Cannot decrypt; return empty rather than exposing garbage
                 }
             }
@@ -184,23 +258,56 @@ namespace OrganizadorCapitulos.Maui.Services
                     _settings = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Failed to load settings from {SettingsPath}", _settingsPath);
                 _settings = new AppSettings();
+            }
+
+            _decryptedApiKey = DecryptApiKey(_settings.TmdbApiKey);
+        }
+
+        private void ScheduleSave()
+        {
+            lock (_debounceLock)
+            {
+                _debounceCts?.Cancel();
+                _debounceCts?.Dispose();
+                _debounceCts = new CancellationTokenSource();
+                var token = _debounceCts.Token;
+                _ = DebouncedSaveAsync(token);
             }
         }
 
-        private async Task SaveSettingsAsync()
+        private async Task DebouncedSaveAsync(CancellationToken token)
+        {
+            try
+            {
+                await Task.Delay(SaveDebounceMs, token).ConfigureAwait(false);
+                if (!token.IsCancellationRequested)
+                {
+                    await SaveSettingsCoreAsync().ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Debounced by newer setting change
+            }
+        }
+
+        private async Task SaveSettingsCoreAsync()
         {
             await _saveLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 var json = JsonSerializer.Serialize(_settings, _jsonOptions);
-                await File.WriteAllTextAsync(_settingsPath, json).ConfigureAwait(false);
+                var tempPath = _settingsPath + ".tmp";
+                await File.WriteAllTextAsync(tempPath, json).ConfigureAwait(false);
+                File.Move(tempPath, _settingsPath, overwrite: true);
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore save errors
+                _logger.LogWarning(ex, "Failed to save settings to {SettingsPath}", _settingsPath);
             }
             finally
             {

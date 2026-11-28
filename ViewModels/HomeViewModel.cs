@@ -1,19 +1,28 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Text.Json;
 using System.Threading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using organizadorCapitulos.Application.Services;
-using organizadorCapitulos.Application.Strategies;using organizadorCapitulos.Core.Entities;
+using organizadorCapitulos.Application.Strategies;
+using organizadorCapitulos.Core.Entities;
 using organizadorCapitulos.Core.Enums;
 using organizadorCapitulos.Core.Interfaces.Services;
 using OrganizadorCapitulos.Maui.Models;
 using OrganizadorCapitulos.Maui.Services;
 using OrganizadorCapitulos.Maui.Services.Interfaces;
+using OrganizadorCapitulos.Maui.Services.Workflows;
 
 namespace OrganizadorCapitulos.Maui.ViewModels
 {
     public partial class HomeViewModel : ObservableObject
     {
+        private static readonly JsonSerializerOptions SessionJsonOptions = new() { WriteIndented = true };
+
         private readonly FileOrganizerService _fileOrganizerService;
         private readonly IAIService _aiService;
         private readonly RenameStrategyFactory _strategyFactory;
@@ -23,19 +32,26 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         private readonly OperationLogService _logService;
         private readonly IThemeService _themeService;
         private readonly IDragDropService _dragDropService;
+        private readonly FileAnalysisWorkflow _analysisWorkflow;
+        private readonly FileOrganizationWorkflow _organizationWorkflow;
+        private readonly ILogger<HomeViewModel> _logger;
 
-        // Dependencies needed for specific logic
-        private string? _maintainSeriesTitle;
-        private int _maintainSeason = 1;
-        private int _maintainNextEpisode = 1;
         private CancellationTokenSource? _operationCts;
         private bool _servicesInitialized;
+        private long _lastProgressTicks;
+
+        private bool _metricsDirty = true;
+        private int _analyzedCount;
+        private int _pendingCount;
+        private int _errorCount;
+        private int _readyCheckedCount;
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(FileCounts))]
         [NotifyPropertyChangedFor(nameof(AnalyzedCount))]
         [NotifyPropertyChangedFor(nameof(PendingCount))]
         [NotifyPropertyChangedFor(nameof(ErrorCount))]
+        [NotifyPropertyChangedFor(nameof(ReadyCheckedCount))]
         private ObservableCollection<FileViewModel> _files = new();
 
         [ObservableProperty]
@@ -55,9 +71,11 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         private string _progressMessage = "";
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ProgressPercent))]
         private int _progressCurrent;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ProgressPercent))]
         private int _progressTotal;
 
         [ObservableProperty]
@@ -87,9 +105,26 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         public bool IsNotProcessing => !IsProcessing;
 
         public string FileCounts => $"{Files.Count} total | {AnalyzedCount} listos";
-        public int AnalyzedCount => Files.Count(f => f.Status == FileStatus.Analyzed);
-        public int PendingCount => Files.Count(f => f.Status == FileStatus.Pending);
-        public int ErrorCount => Files.Count(f => f.Status == FileStatus.Error);
+
+        public int AnalyzedCount
+        {
+            get { EnsureMetricsUpToDate(); return _analyzedCount; }
+        }
+
+        public int PendingCount
+        {
+            get { EnsureMetricsUpToDate(); return _pendingCount; }
+        }
+
+        public int ErrorCount
+        {
+            get { EnsureMetricsUpToDate(); return _errorCount; }
+        }
+
+        public int ReadyCheckedCount
+        {
+            get { EnsureMetricsUpToDate(); return _readyCheckedCount; }
+        }
 
         public int ProgressPercent => ProgressTotal > 0 ? (int)((ProgressCurrent * 100.0) / ProgressTotal) : 0;
 
@@ -106,7 +141,10 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             UndoRedoService undoRedoService,
             OperationLogService logService,
             IThemeService themeService,
-            IDragDropService dragDropService)
+            IDragDropService dragDropService,
+            FileAnalysisWorkflow? analysisWorkflow = null,
+            FileOrganizationWorkflow? organizationWorkflow = null,
+            ILogger<HomeViewModel>? logger = null)
         {
             _fileOrganizerService = fileOrganizerService;
             _aiService = aiService;
@@ -117,9 +155,13 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             _logService = logService;
             _themeService = themeService;
             _dragDropService = dragDropService;
+            _analysisWorkflow = analysisWorkflow ?? new FileAnalysisWorkflow(fileOrganizerService, aiService);
+            _organizationWorkflow = organizationWorkflow ?? new FileOrganizationWorkflow(fileOrganizerService, strategyFactory);
+            _logger = logger ?? NullLogger<HomeViewModel>.Instance;
 
             _dragDropService.FoldersDropped += OnFoldersDropped;
             _dragDropService.SessionFileDropped += OnSessionFileDropped;
+            AttachFilesCollection(_files);
 
             // Initialize saved settings
             if (!string.IsNullOrEmpty(_settingsService.TmdbApiKey))
@@ -129,16 +171,120 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             _metadataService.ConfigureLanguage(_settingsService.TmdbLanguage);
         }
 
+        partial void OnFilesChanging(ObservableCollection<FileViewModel>? oldValue, ObservableCollection<FileViewModel> newValue)
+        {
+            if (oldValue != null)
+            {
+                DetachFilesCollection(oldValue);
+            }
+        }
+
+        partial void OnFilesChanged(ObservableCollection<FileViewModel> value)
+        {
+            AttachFilesCollection(value);
+            _metricsDirty = true;
+        }
+
+        private void AttachFilesCollection(ObservableCollection<FileViewModel> collection)
+        {
+            collection.CollectionChanged += OnFilesCollectionChanged;
+            foreach (var item in collection)
+            {
+                item.PropertyChanged += OnFileItemPropertyChanged;
+            }
+        }
+
+        private void DetachFilesCollection(ObservableCollection<FileViewModel> collection)
+        {
+            collection.CollectionChanged -= OnFilesCollectionChanged;
+            foreach (var item in collection)
+            {
+                item.PropertyChanged -= OnFileItemPropertyChanged;
+            }
+        }
+
+        private void OnFilesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+            {
+                foreach (FileViewModel item in e.OldItems)
+                {
+                    item.PropertyChanged -= OnFileItemPropertyChanged;
+                }
+            }
+            if (e.NewItems != null)
+            {
+                foreach (FileViewModel item in e.NewItems)
+                {
+                    item.PropertyChanged += OnFileItemPropertyChanged;
+                }
+            }
+            _metricsDirty = true;
+        }
+
+        private void OnFileItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(FileViewModel.Status) or nameof(FileViewModel.IsChecked))
+            {
+                _metricsDirty = true;
+            }
+        }
+
+        private void EnsureMetricsUpToDate()
+        {
+            if (!_metricsDirty) return;
+
+            int analyzed = 0, pending = 0, error = 0, readyChecked = 0;
+            foreach (var f in Files)
+            {
+                switch (f.Status)
+                {
+                    case FileStatus.Analyzed:
+                        analyzed++;
+                        if (f.IsChecked) readyChecked++;
+                        break;
+                    case FileStatus.Pending:
+                        pending++;
+                        break;
+                    case FileStatus.Error:
+                        error++;
+                        break;
+                }
+            }
+
+            _analyzedCount = analyzed;
+            _pendingCount = pending;
+            _errorCount = error;
+            _readyCheckedCount = readyChecked;
+            _metricsDirty = false;
+        }
+
+        private void NotifyFileMetricsChanged()
+        {
+            _metricsDirty = true;
+            EnsureMetricsUpToDate();
+            OnPropertyChanged(nameof(FileCounts));
+            OnPropertyChanged(nameof(AnalyzedCount));
+            OnPropertyChanged(nameof(PendingCount));
+            OnPropertyChanged(nameof(ErrorCount));
+            OnPropertyChanged(nameof(ReadyCheckedCount));
+        }
+
         [RelayCommand]
         public async Task InitializeAsync()
         {
             if (!_servicesInitialized)
             {
                 _servicesInitialized = true;
-                await _logService.InitializeAsync();
-                await _undoRedoService.LoadHistoryAsync();
+                await Task.WhenAll(
+                    _logService.InitializeAsync(),
+                    _undoRedoService.LoadHistoryAsync(),
+                    _themeService.InitializeAsync());
             }
-            await _themeService.InitializeAsync();
+            else
+            {
+                await _themeService.InitializeAsync();
+            }
         }
 
         [RelayCommand]
@@ -163,10 +309,11 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             try
             {
                 IsDragging = false;
-                await LoadFoldersAsync(new System.Collections.Generic.List<string>(folders));
+                await LoadFoldersAsync(new List<string>(folders));
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Error loading dropped folders");
                 StatusMessage = $"Error al cargar carpetas: {ex.Message}";
             }
         }
@@ -180,6 +327,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Error importing dropped session file {Path}", jsonFilePath);
                 StatusMessage = $"Error al importar sesión: {ex.Message}";
             }
         }
@@ -232,27 +380,54 @@ namespace OrganizadorCapitulos.Maui.ViewModels
 
             try
             {
-                Files.Clear();
-                var filePaths = await _fileOrganizerService.LoadVideoFilesAsync(folders);
+                var result = await _analysisWorkflow.LoadAndAnalyzeLocalAsync(folders);
+                var strategy = _strategyFactory.CreateStrategy(CurrentMode);
+                var template = _settingsService.FileNameTemplate;
+                var loaded = new List<FileViewModel>(result.Files.Count);
 
-                foreach (var path in filePaths)
+                foreach (var item in result.Files)
                 {
-                    Files.Add(new FileViewModel
+                    var vm = new FileViewModel
                     {
-                        OriginalName = Path.GetFileName(path),
-                        FullPath = path,
-                        Status = FileStatus.Pending
-                    });
+                        OriginalName = item.OriginalName,
+                        FullPath = item.FullPath,
+                        Status = item.IsAnalyzed ? FileStatus.Analyzed : FileStatus.Pending,
+                        SeriesTitle = item.SeriesTitle,
+                        Season = item.Season,
+                        Episode = item.Episode,
+                        EpisodeTitle = item.EpisodeTitle,
+                        Year = item.Year
+                    };
+
+                    if (item.IsAnalyzed && !string.IsNullOrWhiteSpace(vm.SeriesTitle))
+                    {
+                        vm.NewName = strategy.GetNewFileName(
+                            vm.OriginalName,
+                            new ChapterInfo
+                            {
+                                Title = vm.SeriesTitle,
+                                Season = vm.Season,
+                                Episode = vm.Episode,
+                                EpisodeTitle = vm.EpisodeTitle,
+                                Year = vm.Year
+                            },
+                            template);
+                    }
+
+                    loaded.Add(vm);
                 }
 
-                // Auto-analyze with local parser (FEAT-01)
-                AutoAnalyzeWithLocalParser();
+                SelectedFile = null;
+                Files = new ObservableCollection<FileViewModel>(loaded);
+                NotifyFileMetricsChanged();
 
-                StatusMessage = $"Carga completada: {Files.Count} archivos de video encontrados";
-                OnPropertyChanged(nameof(FileCounts));
+                StatusMessage = result.AutoAnalyzedCount > 0
+                    ? $"Carga completada: {Files.Count} archivos ({result.AutoAnalyzedCount} auto-analizados localmente)"
+                    : $"Carga completada: {Files.Count} archivos de video encontrados";
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Failed to load folders");
                 StatusMessage = $"Error: {ex.Message}";
             }
             finally
@@ -266,7 +441,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         {
             if (!Files.Any()) return;
 
-            if (!_aiService.IsAvailable())
+            if (!_analysisWorkflow.IsAIAvailable())
             {
                 StatusMessage = "Error: El servicio de IA no está disponible";
                 return;
@@ -277,53 +452,42 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             _operationCts = new CancellationTokenSource();
             var ct = _operationCts.Token;
 
+            var filesSnapshot = Files.ToList();
+            var fileNames = filesSnapshot.Select(f => f.OriginalName).ToList();
+
             IsProcessing = true;
-            ProgressTotal = Files.Count;
-            ProgressCurrent = 0;
+            _lastProgressTicks = 0;
+            UpdateProgress("Analizando archivos...", 0, filesSnapshot.Count);
 
             try
             {
-                foreach (var file in Files)
+                var batch = await _analysisWorkflow.AnalyzeWithAIAsync(
+                    fileNames,
+                    (current, total, fileName) => UpdateProgressThrottled($"Analizando: {fileName}", current, total),
+                    ct);
+
+                foreach (var itemResult in batch.Results)
                 {
-                    ct.ThrowIfCancellationRequested();
-
-                    ProgressCurrent++;
-                    UpdateProgress($"Analizando: {file.OriginalName}", ProgressCurrent, ProgressTotal);
-
-                    try
+                    var file = filesSnapshot[itemResult.Index];
+                    if (itemResult.Success && itemResult.Metadata != null)
                     {
-                        var result = await _aiService.AnalyzeFilenameAsync(file.OriginalName, ct);
-                        if (result != null)
-                        {
-                            file.SeriesTitle = result.Title ?? "";
-                            file.Season = result.Season;
-                            file.Episode = result.Episode;
-                            file.EpisodeTitle = result.EpisodeTitle ?? "";
-                            file.Status = FileStatus.Analyzed;
-                            UpdatePreviewForFile(file);
-                        }
-                        else
-                        {
-                            file.Status = FileStatus.Error;
-                        }
+                        file.SeriesTitle = itemResult.Metadata.Title ?? "";
+                        file.Season = itemResult.Metadata.Season;
+                        file.Episode = itemResult.Metadata.Episode;
+                        file.EpisodeTitle = itemResult.Metadata.EpisodeTitle ?? "";
+                        file.Status = FileStatus.Analyzed;
+                        UpdatePreviewForFile(file);
                     }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch
+                    else
                     {
                         file.Status = FileStatus.Error;
                     }
                 }
 
-                StatusMessage = $"Análisis completado: {Files.Count(f => f.Status == FileStatus.Analyzed)} archivos analizados";
-                OnPropertyChanged(nameof(FileCounts));
-            }
-            catch (OperationCanceledException)
-            {
-                StatusMessage = "Análisis cancelado";
-                OnPropertyChanged(nameof(FileCounts));
+                NotifyFileMetricsChanged();
+                StatusMessage = batch.Cancelled
+                    ? "Análisis cancelado"
+                    : $"Análisis completado: {AnalyzedCount} archivos analizados";
             }
             finally
             {
@@ -338,7 +502,10 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         {
             var previousFile = SelectedFile;
 
-            foreach (var f in Files) f.IsSelected = false;
+            if (previousFile != null && !ReferenceEquals(previousFile, file))
+            {
+                previousFile.IsSelected = false;
+            }
             file.IsSelected = true;
             SelectedFile = file;
 
@@ -352,9 +519,25 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 file.Season = previousFile.Season;
                 file.Episode = previousFile.Episode + 1;
                 file.Status = FileStatus.Analyzed;
+                NotifyFileMetricsChanged();
             }
 
             UpdatePreviewForFile(file);
+        }
+
+        [RelayCommand]
+        public void ClearErrors()
+        {
+            var remaining = Files.Where(f => f.Status != FileStatus.Error).ToList();
+            if (remaining.Count == Files.Count) return;
+
+            if (SelectedFile?.Status == FileStatus.Error)
+            {
+                SelectedFile = null;
+            }
+            Files = new ObservableCollection<FileViewModel>(remaining);
+            NotifyFileMetricsChanged();
+            StatusMessage = "Incidencias limpiadas de la lista";
         }
 
         [RelayCommand]
@@ -385,26 +568,9 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 }
             }
 
-            // FEAT-06: Show dry-run confirmation with exact previews (including Maintain sequential numbering & template)
-            var strategy = _strategyFactory.CreateStrategy(CurrentMode);
-            string? maintainTitle = CurrentMode == RenameMode.Maintain ? filesToRename[0].SeriesTitle : null;
-            int maintainSeason = CurrentMode == RenameMode.Maintain ? filesToRename[0].Season : 0;
-            int maintainEp = CurrentMode == RenameMode.Maintain ? filesToRename[0].Episode : 0;
-
-            _dryRunPreview = new List<(string original, string preview)>();
-            foreach (var f in filesToRename)
-            {
-                var info = new ChapterInfo
-                {
-                    Title = maintainTitle ?? f.SeriesTitle,
-                    Season = maintainTitle != null ? maintainSeason : f.Season,
-                    Episode = maintainTitle != null ? maintainEp++ : f.Episode,
-                    EpisodeTitle = f.EpisodeTitle,
-                    Year = f.Year
-                };
-                var preview = strategy.GetNewFileName(f.OriginalName, info, _settingsService.FileNameTemplate);
-                _dryRunPreview.Add((f.OriginalName, string.IsNullOrEmpty(preview) ? "(sin vista previa)" : preview));
-            }
+            // FEAT-06: Show dry-run confirmation with exact previews
+            var batchItems = filesToRename.Select(ToRenameBatchItem).ToList();
+            _dryRunPreview = _organizationWorkflow.BuildDryRunPreview(batchItems, CurrentMode, _settingsService.FileNameTemplate);
             ShowingDryRun = true;
             await Task.CompletedTask;
         }
@@ -422,50 +588,72 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             var ct = _operationCts.Token;
 
             IsProcessing = true;
-            ProgressTotal = filesToRename.Count;
-            ProgressCurrent = 0;
-
-            if (CurrentMode == RenameMode.Maintain && filesToRename.Any())
-            {
-                var firstFile = filesToRename.First();
-                _maintainSeriesTitle = firstFile.SeriesTitle;
-                _maintainSeason = firstFile.Season;
-                _maintainNextEpisode = firstFile.Episode;
-            }
-
-            var batchUndoOperations = new List<RenameOperation>();
+            _lastProgressTicks = 0;
+            UpdateProgress("Renombrando archivos...", 0, filesToRename.Count);
 
             try
             {
-                foreach (var file in filesToRename)
+                var batchItems = filesToRename.Select(ToRenameBatchItem).ToList();
+                var batchResult = await _organizationWorkflow.RenameBatchAsync(
+                    batchItems,
+                    CurrentMode,
+                    _settingsService.FileNameTemplate,
+                    _settingsService.RenameCompanionFiles,
+                    (current, total, name) => UpdateProgressThrottled($"Renombrando: {name}", current, total),
+                    ct);
+
+                string? lastError = null;
+                int doneCount = 0;
+
+                foreach (var itemResult in batchResult.ItemResults)
                 {
-                    ct.ThrowIfCancellationRequested();
-                    ProgressCurrent++;
-                    UpdateProgress($"Renombrando: {file.OriginalName}", ProgressCurrent, ProgressTotal);
-                    var ops = await RenameFileInternalAsync(file, ct);
-                    batchUndoOperations.AddRange(ops);
+                    var file = filesToRename[itemResult.Index];
+                    if (itemResult.Success)
+                    {
+                        file.FullPath = itemResult.NewPath;
+                        file.OriginalName = Path.GetFileName(itemResult.NewPath);
+                        file.Status = FileStatus.Done;
+                        file.NewName = "";
+                        file.SeriesTitle = itemResult.AppliedInfo.Title;
+                        file.Season = itemResult.AppliedInfo.Season;
+                        file.Episode = itemResult.AppliedInfo.Episode;
+                        file.Year = itemResult.AppliedInfo.Year;
+                        doneCount++;
+                    }
+                    else
+                    {
+                        file.Status = FileStatus.Error;
+                        lastError = itemResult.ErrorMessage;
+                    }
                 }
 
-                if (batchUndoOperations.Count > 0)
+                if (batchResult.UndoOperations.Count > 0)
                 {
-                    _undoRedoService.RecordOperations(batchUndoOperations);
+                    _undoRedoService.RecordOperations(batchResult.UndoOperations);
                 }
 
-                StatusMessage = $"Renombrado completado: {Files.Count(f => f.Status == FileStatus.Done)} archivos";
-                OnPropertyChanged(nameof(FileCounts));
-            }
-            catch (OperationCanceledException)
-            {
-                if (batchUndoOperations.Count > 0)
+                if (batchResult.LogEntries.Count > 0)
                 {
-                    _undoRedoService.RecordOperations(batchUndoOperations);
+                    _logService.LogBatch(batchResult.LogEntries);
                 }
-                StatusMessage = "Renombrado cancelado";
-                OnPropertyChanged(nameof(FileCounts));
+
+                NotifyFileMetricsChanged();
+
+                if (batchResult.Cancelled)
+                {
+                    StatusMessage = "Renombrado cancelado";
+                }
+                else if (lastError != null && doneCount == 0)
+                {
+                    StatusMessage = $"Error: {lastError}";
+                }
+                else
+                {
+                    StatusMessage = $"Renombrado completado: {Files.Count(f => f.Status == FileStatus.Done)} archivos";
+                }
             }
             finally
             {
-                _maintainSeriesTitle = null;
                 _operationCts?.Dispose();
                 _operationCts = null;
                 IsProcessing = false;
@@ -475,69 +663,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [RelayCommand]
         private void CancelDryRun() => ShowingDryRun = false;
 
-        private async Task<List<RenameOperation>> RenameFileInternalAsync(FileViewModel file, CancellationToken ct = default)
-        {
-            var recorded = new List<RenameOperation>();
-            var oldPath = file.FullPath;
-            try
-            {
-                var chapterInfo = new ChapterInfo
-                {
-                    Title = file.SeriesTitle,
-                    Season = file.Season,
-                    Episode = file.Episode,
-                    EpisodeTitle = file.EpisodeTitle,
-                    Year = file.Year
-                };
-
-                if (CurrentMode == RenameMode.Maintain && _maintainSeriesTitle != null)
-                {
-                    chapterInfo.Title = _maintainSeriesTitle;
-                    chapterInfo.Season = _maintainSeason;
-                    chapterInfo.Episode = _maintainNextEpisode;
-                    _maintainNextEpisode++;
-                }
-
-                var strategy = _strategyFactory.CreateStrategy(CurrentMode);
-                var (newPath, companionMoves) = await _fileOrganizerService.RenameFileWithCompanionsAsync(
-                    oldPath,
-                    chapterInfo,
-                    strategy,
-                    ct,
-                    fileNameTemplate: _settingsService.FileNameTemplate,
-                    renameCompanions: _settingsService.RenameCompanionFiles);
-
-                if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    recorded.Add(new RenameOperation { OldPath = oldPath, NewPath = newPath });
-                    _logService.LogRename(oldPath, newPath, success: true);
-                }
-
-                foreach (var (compOld, compNew) in companionMoves)
-                {
-                    recorded.Add(new RenameOperation { OldPath = compOld, NewPath = compNew });
-                    _logService.LogRename(compOld, compNew, success: true);
-                }
-
-                file.FullPath = newPath;
-                file.OriginalName = Path.GetFileName(newPath);
-                file.Status = FileStatus.Done;
-                file.NewName = "";
-
-                // Update displayed metadata
-                file.SeriesTitle = chapterInfo.Title;
-                file.Season = chapterInfo.Season;
-                file.Episode = chapterInfo.Episode;
-                file.Year = chapterInfo.Year;
-            }
-            catch (Exception ex)
-            {
-                file.Status = FileStatus.Error;
-                _logService.LogRename(oldPath, oldPath, success: false, error: ex.Message);
-                StatusMessage = $"Error: {ex.Message}";
-            }
-            return recorded;
-        }
+        private static RenameBatchItem ToRenameBatchItem(FileViewModel f) =>
+            new(f.FullPath, f.OriginalName, f.SeriesTitle, f.Season, f.Episode, f.EpisodeTitle, f.Year);
 
         [RelayCommand]
         private async Task UndoAsync()
@@ -552,11 +679,13 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 if (result.success && result.count > 0)
                 {
                     ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
-
-                    foreach (var operation in result.appliedOperations)
+                    _logService.LogBatch(result.appliedOperations.Select(operation => new LogEntry
                     {
-                        _logService.LogUndo(operation.OldPath, operation.NewPath);
-                    }
+                        Action = "Undo",
+                        OldName = Path.GetFileName(operation.OldPath),
+                        NewName = Path.GetFileName(operation.NewPath),
+                        Status = "Success"
+                    }));
                 }
 
                 StatusMessage = result.message;
@@ -575,36 +704,22 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             IsProcessing = true;
             StatusMessage = "Deshaciendo todas las operaciones...";
 
-            int totalUndone = 0;
-
             try
             {
-                while (_undoRedoService.CanUndo)
+                var result = await _undoRedoService.UndoAllAsync();
+                if (result.success && result.count > 0)
                 {
-                    try
+                    ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
+                    _logService.LogBatch(result.appliedOperations.Select(operation => new LogEntry
                     {
-                        var result = await _undoRedoService.UndoAsync();
-                        if (!result.success) break;
-
-                        ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: false);
-
-                        foreach (var operation in result.appliedOperations)
-                        {
-                            _logService.LogUndo(operation.OldPath, operation.NewPath);
-                        }
-
-                        totalUndone += result.count;
-                    }
-                    catch
-                    {
-                        break;
-                    }
+                        Action = "Undo",
+                        OldName = Path.GetFileName(operation.OldPath),
+                        NewName = Path.GetFileName(operation.NewPath),
+                        Status = "Success"
+                    }));
                 }
 
-                StatusMessage = totalUndone > 0 ? $"Deshecho: {totalUndone} archivo(s)" : "No hubo operaciones deshechas";
-
-                // Refresh file list state
-                OnPropertyChanged(nameof(FileCounts));
+                StatusMessage = result.count > 0 ? $"Deshecho: {result.count} archivo(s)" : "No hubo operaciones deshechas";
             }
             finally
             {
@@ -625,11 +740,13 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 if (result.success && result.count > 0)
                 {
                     ApplyFilePathChanges(result.appliedOperations, isCompletedOperation: true);
-
-                    foreach (var operation in result.appliedOperations)
+                    _logService.LogBatch(result.appliedOperations.Select(operation => new LogEntry
                     {
-                        _logService.LogRedo(operation.OldPath, operation.NewPath);
-                    }
+                        Action = "Redo",
+                        OldName = Path.GetFileName(operation.OldPath),
+                        NewName = Path.GetFileName(operation.NewPath),
+                        Status = "Success"
+                    }));
                 }
 
                 StatusMessage = result.message;
@@ -675,9 +792,38 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [RelayCommand]
         public void RefreshAllPreviews()
         {
-            foreach (var file in Files.Where(f => f.Status == FileStatus.Analyzed || !string.IsNullOrWhiteSpace(f.SeriesTitle)))
+            var strategy = _strategyFactory.CreateStrategy(CurrentMode);
+            var template = _settingsService.FileNameTemplate;
+
+            foreach (var file in Files)
             {
-                UpdatePreviewForFile(file);
+                if (file.Status != FileStatus.Analyzed && string.IsNullOrWhiteSpace(file.SeriesTitle))
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(file.SeriesTitle))
+                {
+                    file.NewName = "";
+                    continue;
+                }
+
+                try
+                {
+                    file.NewName = strategy.GetNewFileName(
+                        file.OriginalName,
+                        new ChapterInfo
+                        {
+                            Title = file.SeriesTitle,
+                            Season = file.Season,
+                            Episode = file.Episode,
+                            EpisodeTitle = file.EpisodeTitle,
+                            Year = file.Year
+                        },
+                        template);
+                }
+                catch
+                {
+                    file.NewName = "Error";
+                }
             }
         }
 
@@ -685,37 +831,46 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         public void ApplySeriesTitleToAll(string? seriesTitle)
         {
             if (string.IsNullOrWhiteSpace(seriesTitle)) return;
-            foreach (var file in Files.Where(f => f.IsChecked))
+            var trimmed = seriesTitle.Trim();
+            int count = 0;
+            foreach (var file in Files)
             {
-                file.SeriesTitle = seriesTitle.Trim();
+                if (!file.IsChecked) continue;
+                count++;
+                file.SeriesTitle = trimmed;
                 if (file.Status == FileStatus.Pending)
                 {
                     file.Status = FileStatus.Analyzed;
                 }
                 UpdatePreviewForFile(file);
             }
-            StatusMessage = $"Título \"{seriesTitle.Trim()}\" aplicado a {Files.Count(f => f.IsChecked)} archivo(s)";
-            OnPropertyChanged(nameof(FileCounts));
+            StatusMessage = $"Título \"{trimmed}\" aplicado a {count} archivo(s)";
+            NotifyFileMetricsChanged();
         }
 
         [RelayCommand]
         public void ApplySeasonToAll(int season)
         {
             if (season < 0) return;
-            foreach (var file in Files.Where(f => f.IsChecked))
+            int count = 0;
+            foreach (var file in Files)
             {
+                if (!file.IsChecked) continue;
+                count++;
                 file.Season = season;
                 UpdatePreviewForFile(file);
             }
-            StatusMessage = $"Temporada {season} aplicada a {Files.Count(f => f.IsChecked)} archivo(s)";
+            StatusMessage = $"Temporada {season} aplicada a {count} archivo(s)";
         }
 
         [RelayCommand]
         public void RenumberEpisodesSequentially(int startEpisode = 1)
         {
-            int ep = Math.Max(1, startEpisode);
-            foreach (var file in Files.Where(f => f.IsChecked))
+            int start = Math.Max(1, startEpisode);
+            int ep = start;
+            foreach (var file in Files)
             {
+                if (!file.IsChecked) continue;
                 file.Episode = ep++;
                 if (file.Status == FileStatus.Pending && !string.IsNullOrWhiteSpace(file.SeriesTitle))
                 {
@@ -723,8 +878,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 }
                 UpdatePreviewForFile(file);
             }
-            StatusMessage = $"Episodios renumerados secuencialmente desde {Math.Max(1, startEpisode)}";
-            OnPropertyChanged(nameof(FileCounts));
+            StatusMessage = $"Episodios renumerados secuencialmente desde {start}";
+            NotifyFileMetricsChanged();
         }
 
         [RelayCommand]
@@ -734,7 +889,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             {
                 file.IsChecked = isChecked;
             }
-            OnPropertyChanged(nameof(FileCounts));
+            NotifyFileMetricsChanged();
         }
 
         [RelayCommand]
@@ -747,16 +902,19 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [RelayCommand]
         public void ApplySeriesMetadata(string seriesName)
         {
-            foreach (var file in Files.Where(f => f.IsChecked && string.IsNullOrEmpty(f.SeriesTitle)))
+            foreach (var file in Files)
             {
-                file.SeriesTitle = seriesName;
+                if (file.IsChecked && string.IsNullOrEmpty(file.SeriesTitle))
+                {
+                    file.SeriesTitle = seriesName;
+                }
             }
 
             RefreshAllPreviews();
 
             StatusMessage = $"Metadatos TMDB aplicados. Serie: {seriesName}";
             ShowingTmdbSearch = false;
-            OnPropertyChanged(nameof(FileCounts));
+            NotifyFileMetricsChanged();
         }
 
         // Dialog Commands
@@ -788,7 +946,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     f.IsChecked,
                     Status = f.Status.ToString()
                 }).ToList();
-                var json = System.Text.Json.JsonSerializer.Serialize(exportData, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                var json = JsonSerializer.Serialize(exportData, SessionJsonOptions);
                 var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
                 var exportPath = Path.Combine(desktopPath, $"session_{DateTime.Now:yyyyMMdd_HHmmss}.json");
                 await File.WriteAllTextAsync(exportPath, json);
@@ -796,6 +954,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Failed to export session");
                 StatusMessage = $"Error exportando sesión: {ex.Message}";
             }
         }
@@ -824,9 +983,13 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         {
             try
             {
-                var items = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(json);
+                var items = JsonSerializer.Deserialize<List<JsonElement>>(json);
                 if (items == null) return;
-                Files.Clear();
+
+                var imported = new List<FileViewModel>(items.Count);
+                var strategy = _strategyFactory.CreateStrategy(CurrentMode);
+                var template = _settingsService.FileNameTemplate;
+
                 foreach (var item in items)
                 {
                     var originalName = item.TryGetProperty("OriginalName", out var p) ? p.GetString() ?? "" : "";
@@ -844,15 +1007,34 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     };
                     if (Enum.TryParse<FileStatus>(item.TryGetProperty("Status", out var st) ? st.GetString() : null, out var status))
                         file.Status = status;
-                    UpdatePreviewForFile(file);
-                    Files.Add(file);
+
+                    if (!string.IsNullOrWhiteSpace(file.SeriesTitle))
+                    {
+                        file.NewName = strategy.GetNewFileName(
+                            file.OriginalName,
+                            new ChapterInfo
+                            {
+                                Title = file.SeriesTitle,
+                                Season = file.Season,
+                                Episode = file.Episode,
+                                EpisodeTitle = file.EpisodeTitle,
+                                Year = file.Year
+                            },
+                            template);
+                    }
+
+                    imported.Add(file);
                 }
+
+                SelectedFile = null;
+                Files = new ObservableCollection<FileViewModel>(imported);
                 StatusMessage = $"Sesión importada: {Files.Count} archivos";
-                OnPropertyChanged(nameof(FileCounts));
+                NotifyFileMetricsChanged();
                 await Task.CompletedTask;
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Failed to import session JSON");
                 StatusMessage = $"Error leyendo sesión: {ex.Message}";
             }
         }
@@ -868,8 +1050,8 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             if (!filesToMove.Any()) return;
 
             IsProcessing = true;
-            ProgressTotal = filesToMove.Count;
-            ProgressCurrent = 0;
+            _lastProgressTicks = 0;
+            UpdateProgress("Moviendo archivos...", 0, filesToMove.Count);
 
             try
             {
@@ -882,18 +1064,17 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     Year = file.Year
                 })).ToList();
 
-                var movedFiles = await _fileOrganizerService.MoveFilesStructuredAsync(
+                var moveResult = await _organizationWorkflow.MoveBatchAsync(
                     items,
                     destinationFolder,
                     _settingsService.OrganizeIntoSubfolders);
-                var movedBySource = movedFiles.ToDictionary(move => move.oldPath, move => move.newPath);
 
-                foreach (var file in filesToMove)
+                for (int i = 0; i < filesToMove.Count; i++)
                 {
-                    ProgressCurrent++;
-                    UpdateProgress($"Moviendo: {file.OriginalName}", ProgressCurrent, ProgressTotal);
+                    var file = filesToMove[i];
+                    UpdateProgressThrottled($"Moviendo: {file.OriginalName}", i + 1, filesToMove.Count);
 
-                    if (!movedBySource.TryGetValue(file.FullPath, out var newPath))
+                    if (!moveResult.MovedBySource.TryGetValue(file.FullPath, out var newPath))
                     {
                         continue;
                     }
@@ -903,19 +1084,22 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                     file.Status = FileStatus.Done;
                 }
 
-                _undoRedoService.RecordOperations(movedFiles
-                    .Select(move => new RenameOperation { OldPath = move.oldPath, NewPath = move.newPath })
-                    .ToList());
-
-                foreach (var movedFile in movedFiles)
+                if (moveResult.UndoOperations.Count > 0)
                 {
-                    _logService.LogMove(Path.GetFileName(movedFile.oldPath), Path.GetDirectoryName(movedFile.newPath) ?? destinationFolder);
+                    _undoRedoService.RecordOperations(moveResult.UndoOperations);
                 }
 
+                if (moveResult.LogEntries.Count > 0)
+                {
+                    _logService.LogBatch(moveResult.LogEntries);
+                }
+
+                NotifyFileMetricsChanged();
                 StatusMessage = $"Todos los archivos movidos a: {destinationFolder}";
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Failed to move files to {DestinationFolder}", destinationFolder);
                 StatusMessage = $"Error al mover archivos: {ex.Message}";
             }
             finally
@@ -927,15 +1111,47 @@ namespace OrganizadorCapitulos.Maui.ViewModels
         [RelayCommand]
         private async Task RenameSelectedAsync()
         {
-            if (SelectedFile != null)
+            if (SelectedFile == null) return;
+
+            var file = SelectedFile;
+            var batchResult = await _organizationWorkflow.RenameBatchAsync(
+                new[] { ToRenameBatchItem(file) },
+                CurrentMode,
+                _settingsService.FileNameTemplate,
+                _settingsService.RenameCompanionFiles);
+
+            if (batchResult.ItemResults.Count > 0)
             {
-                var ops = await RenameFileInternalAsync(SelectedFile);
-                if (ops.Count > 0)
+                var r = batchResult.ItemResults[0];
+                if (r.Success)
                 {
-                    _undoRedoService.RecordOperations(ops);
+                    file.FullPath = r.NewPath;
+                    file.OriginalName = Path.GetFileName(r.NewPath);
+                    file.Status = FileStatus.Done;
+                    file.NewName = "";
+                    file.SeriesTitle = r.AppliedInfo.Title;
+                    file.Season = r.AppliedInfo.Season;
+                    file.Episode = r.AppliedInfo.Episode;
+                    file.Year = r.AppliedInfo.Year;
                 }
-                OnPropertyChanged(nameof(FileCounts));
+                else
+                {
+                    file.Status = FileStatus.Error;
+                    StatusMessage = $"Error: {r.ErrorMessage}";
+                }
             }
+
+            if (batchResult.UndoOperations.Count > 0)
+            {
+                _undoRedoService.RecordOperations(batchResult.UndoOperations);
+            }
+
+            if (batchResult.LogEntries.Count > 0)
+            {
+                _logService.LogBatch(batchResult.LogEntries);
+            }
+
+            NotifyFileMetricsChanged();
         }
 
         private void UpdateProgress(string message, int current, int total)
@@ -945,52 +1161,30 @@ namespace OrganizadorCapitulos.Maui.ViewModels
             ProgressTotal = total;
         }
 
-        /// <summary>
-        /// FEAT-01: Runs EpisodePatternParser on every Pending file immediately after loading.
-        /// Files that match a pattern are marked as Analyzed so the user can rename without AI.
-        /// </summary>
-        private void AutoAnalyzeWithLocalParser()
+        private void UpdateProgressThrottled(string message, int current, int total)
         {
-            int autoAnalyzed = 0;
-            foreach (var file in Files.Where(f => f.Status == FileStatus.Pending))
+            long now = Environment.TickCount64;
+            if (current <= 0 || current >= total || now - _lastProgressTicks >= 60)
             {
-                if (EpisodePatternParser.TryExtractSeasonEpisode(file.OriginalName, out int season, out int episode))
-                {
-                    file.Season = season;
-                    file.Episode = episode;
-                    file.SeriesTitle = EpisodePatternParser.ExtractSeriesTitle(file.OriginalName);
-                    file.EpisodeTitle = EpisodePatternParser.ExtractEpisodeTitle(file.OriginalName);
-                    file.Status = FileStatus.Analyzed;
-                    UpdatePreviewForFile(file);
-                    autoAnalyzed++;
-                }
-                else if (EpisodePatternParser.TryExtractYear(file.OriginalName, out int year))
-                {
-                    file.Year = year;
-                    file.SeriesTitle = EpisodePatternParser.ExtractMovieTitle(file.OriginalName);
-                    file.Season = 0;
-                    file.Episode = 0;
-                    file.EpisodeTitle = string.Empty;
-                    file.Status = FileStatus.Analyzed;
-                    UpdatePreviewForFile(file);
-                    autoAnalyzed++;
-                }
-            }
-            if (autoAnalyzed > 0)
-            {
-                StatusMessage = $"Carga completada: {Files.Count} archivos ({autoAnalyzed} auto-analizados localmente)";
-                OnPropertyChanged(nameof(FileCounts));
-                OnPropertyChanged(nameof(AnalyzedCount));
-                OnPropertyChanged(nameof(PendingCount));
+                _lastProgressTicks = now;
+                UpdateProgress(message, current, total);
             }
         }
 
         private void ApplyFilePathChanges(IEnumerable<RenameOperation> operations, bool isCompletedOperation)
         {
+            var filesByPath = new Dictionary<string, FileViewModel>(Files.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var item in Files)
+            {
+                if (!string.IsNullOrEmpty(item.FullPath))
+                {
+                    filesByPath[item.FullPath] = item;
+                }
+            }
+
             foreach (var operation in operations)
             {
-                var file = Files.FirstOrDefault(item => string.Equals(item.FullPath, operation.OldPath, StringComparison.OrdinalIgnoreCase));
-                if (file == null)
+                if (!filesByPath.TryGetValue(operation.OldPath, out var file))
                 {
                     continue;
                 }
@@ -1012,7 +1206,7 @@ namespace OrganizadorCapitulos.Maui.ViewModels
                 UpdatePreviewForFile(file);
             }
 
-            OnPropertyChanged(nameof(FileCounts));
+            NotifyFileMetricsChanged();
         }
     }
 }
