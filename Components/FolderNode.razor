@@ -1,50 +1,52 @@
 @using System.IO
 
 <div class="folder-node">
-    <div class="d-flex align-items-center py-1 px-2 @(IsHovered ? "bg-light" : "")" 
-         style="padding-left: @(Level * 20 + 8)px; cursor: pointer;"
-         @onmouseenter="() => IsHovered = true"
-         @onmouseleave="() => IsHovered = false">
-        
-        @* Expand/Collapse button *@
+    <div class="folder-node-row d-flex align-items-center py-1 px-2"
+         style="padding-left: @(Level * 18 + 6)px; cursor: pointer;">
+
         @if (HasSubfolders)
         {
-            <button class="btn btn-link btn-sm p-0 me-1 text-secondary" 
-                    style="width: 20px;" 
-                    @onclick="ToggleExpand"
-                    @onclick:stopPropagation="true">
-                @(IsExpanded ? "▼" : "▶")
+            <button type="button" class="folder-expand-btn me-1"
+                    @onclick="ToggleExpandAsync"
+                    @onclick:stopPropagation="true"
+                    aria-label="@(IsExpanded ? $"Contraer {Name}" : $"Expandir {Name}")">
+                @if (_isLoading)
+                {
+                    <Icon Name="clock" Size="12" />
+                }
+                else
+                {
+                    <Icon Name="@(IsExpanded ? "chevron-down" : "chevron-right")" Size="13" />
+                }
             </button>
         }
         else
         {
-            <span style="width: 20px; display: inline-block;"></span>
+            <span style="width: 20px; margin-right: 4px; display: inline-block;"></span>
         }
 
-        @* Checkbox *@
-        <input type="checkbox" 
-               class="form-check-input me-2" 
+        <input type="checkbox"
+               class="form-check-input me-2 mt-0"
                checked="@IsSelected"
                @onchange="OnCheckChanged" />
 
-        @* Folder icon and name *@
-        <span @onclick="ToggleExpand" class="user-select-none">
-            📁 @Name
+        <span @onclick="ToggleExpandAsync" class="user-select-none d-inline-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
+            <Icon Name="@(IsExpanded ? "folder-open" : "folder")" Size="14" />
+            <span class="text-truncate">@Name</span>
         </span>
     </div>
 
-    @* Children *@
     @if (IsExpanded && Subfolders.Any())
     {
         @foreach (var subfolder in Subfolders)
         {
-            <FolderNode 
-                Path="@subfolder.FullPath" 
-                Name="@subfolder.Name" 
-                Level="@(Level + 1)"
-                SelectedFolders="@SelectedFolders"
-                OnSelectionChanged="@OnSelectionChanged"
-                IsSingleMode="@IsSingleMode" />
+            <FolderNode @key="subfolder.FullPath"
+                        Path="@subfolder.FullPath"
+                        Name="@subfolder.Name"
+                        Level="@(Level + 1)"
+                        SelectedFolders="@SelectedFolders"
+                        OnSelectionChanged="@OnSelectionChanged"
+                        IsSingleMode="@IsSingleMode" />
         }
     }
 </div>
@@ -58,60 +60,65 @@
     [Parameter] public bool IsSingleMode { get; set; } = false;
 
     private bool IsExpanded = false;
-    private bool IsHovered = false;
+    private bool _isLoading = false;
     private bool HasSubfolders = true;
     private List<FolderInfo> Subfolders = new();
     private bool SubfoldersLoaded = false;
 
     private bool IsSelected => SelectedFolders.Contains(Path);
 
-    private class FolderInfo
+    private sealed class FolderInfo
     {
         public string Name { get; set; } = "";
         public string FullPath { get; set; } = "";
     }
 
-    protected override void OnInitialized()
+    private async Task ToggleExpandAsync()
     {
-        // Verificar si tiene subcarpetas (sin cargarlas aún)
-        try
-        {
-            HasSubfolders = Directory.EnumerateDirectories(Path).Any();
-        }
-        catch
-        {
-            HasSubfolders = false;
-        }
-    }
+        if (!HasSubfolders || _isLoading) return;
 
-    private void ToggleExpand()
-    {
         IsExpanded = !IsExpanded;
-        
+
         if (IsExpanded && !SubfoldersLoaded)
         {
-            LoadSubfolders();
+            _isLoading = true;
+            StateHasChanged();
+
+            var targetPath = Path;
+            var loaded = await Task.Run(() => LoadSubfoldersCore(targetPath));
+            Subfolders = loaded;
+            SubfoldersLoaded = true;
+            HasSubfolders = Subfolders.Count > 0;
+            _isLoading = false;
         }
     }
 
-    private void LoadSubfolders()
+    private static List<FolderInfo> LoadSubfoldersCore(string directoryPath)
     {
         try
         {
-            Subfolders = Directory.GetDirectories(Path)
-                .Select(d => new FolderInfo 
-                { 
-                    Name = System.IO.Path.GetFileName(d),
-                    FullPath = d 
+            var options = new EnumerationOptions
+            {
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.None
+            };
+
+            const FileAttributes hiddenSystem = FileAttributes.Hidden | FileAttributes.System;
+
+            return new DirectoryInfo(directoryPath)
+                .EnumerateDirectories("*", options)
+                .Where(d => (d.Attributes & hiddenSystem) != hiddenSystem)
+                .Select(d => new FolderInfo
+                {
+                    Name = d.Name,
+                    FullPath = d.FullName
                 })
-                .OrderBy(f => f.Name)
+                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            
-            SubfoldersLoaded = true;
         }
         catch
         {
-            Subfolders = new List<FolderInfo>();
+            return new List<FolderInfo>();
         }
     }
 

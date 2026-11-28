@@ -3,46 +3,108 @@
 @using OrganizadorCapitulos.Maui.Components
 
 <div class="modal fade show d-block modal-backdrop-themed" tabindex="-1" role="dialog" aria-modal="true"
-    aria-labelledby="folder-browser-title">
+     aria-labelledby="folder-browser-title">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header py-2">
-                <div class="modal-title-group">
-                    <span class="modal-kicker">Origen</span>
-                    <h5 class="modal-title" id="folder-browser-title">Seleccionar carpetas</h5>
-                    <p class="modal-subtitle">Explora las unidades disponibles y elige las carpetas que contienen los videos.</p>
-                </div>
+            <div class="modal-header">
+                <h5 class="modal-title" id="folder-browser-title">
+                    <Icon Name="folder-open" Size="15" />
+                    <span>@(IsSingleSelectionMode ? "Seleccionar carpeta de destino" : "Seleccionar carpetas")</span>
+                </h5>
                 <button type="button" class="btn-close" data-shortcut="escape" @onclick="Cancel" aria-label="Cerrar diálogo"></button>
             </div>
-            <div class="modal-body p-0" style="height: 400px; overflow-y: auto;">
-                @if (_loadingDrives)
-                {
-                    <div class="d-flex align-items-center justify-content-center h-100">
-                        <div class="spinner-border spinner-border-sm text-secondary me-2" role="status" aria-hidden="true"></div>
-                        <span class="text-muted small">Cargando unidades...</span>
+
+            <div class="modal-body p-0 d-flex flex-column" style="height: 460px;">
+                <!-- Direct Path + Quick Access -->
+                <div class="p-2 d-flex flex-column gap-2" style="border-bottom: 1px solid var(--border); background: var(--bg-app);">
+                    <div class="d-flex gap-2">
+                        <input type="text" class="form-control"
+                               @bind="_manualPath" @bind:event="oninput" @onkeypress="OnManualPathKeyPress"
+                               placeholder="Escribe o pega una ruta (ej. D:\Series o \\servidor\carpeta)..."
+                               aria-label="Ruta directa de carpeta" />
+                        <button type="button" class="cmd-btn" @onclick="AddManualPath"
+                                disabled="@string.IsNullOrWhiteSpace(_manualPath)" style="height: 32px;">
+                            <span>Añadir</span>
+                        </button>
                     </div>
-                }
-                else
-                {
-                <div class="list-group list-group-flush">
-                    @foreach (var drive in Drives)
+
+                    @if (!string.IsNullOrEmpty(_pathError))
                     {
-                        <FolderNode Path="@drive" Name="@drive" Level="0" SelectedFolders="@SelectedFolders"
-                            OnSelectionChanged="OnSelectionChanged" IsSingleMode="@IsSingleSelectionMode" />
+                        <div class="text-danger" style="font-size: 11.5px;">@_pathError</div>
+                    }
+
+                    @if (_quickFolders.Count > 0)
+                    {
+                        <div class="d-flex align-items-center gap-1 flex-wrap">
+                            <span class="text-muted me-1" style="font-size: 11px;">Accesos rápidos:</span>
+                            @foreach (var q in _quickFolders)
+                            {
+                                var isQuickSelected = SelectedFolders.Contains(q.Path);
+                                <button type="button"
+                                        class="template-chip @(isQuickSelected ? "border-primary text-primary" : "")"
+                                        style="font-family: inherit;"
+                                        @onclick="() => ToggleQuickFolder(q.Path)"
+                                        title="@q.Path">
+                                    @q.Label
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (SelectedFolders.Count > 0)
+                    {
+                        <div class="d-flex align-items-center gap-1 flex-wrap">
+                            <span class="text-muted me-1" style="font-size: 11px;">Seleccionadas:</span>
+                            @foreach (var folderPath in SelectedFolders.ToList())
+                            {
+                                <span class="status-pill status-analyzed" style="gap: 4px;" title="@folderPath">
+                                    <span class="text-truncate" style="max-width: 240px;">@folderPath</span>
+                                    <button type="button"
+                                            style="border: none; background: transparent; color: inherit; padding: 0; line-height: 1; cursor: pointer;"
+                                            @onclick="() => RemoveSelectedFolder(folderPath)"
+                                            aria-label="Quitar @folderPath">
+                                        <Icon Name="x" Size="11" />
+                                    </button>
+                                </span>
+                            }
+                        </div>
                     }
                 </div>
-                }
+
+                <!-- Drive Tree -->
+                <div class="flex-grow-1 p-2" style="overflow-y: auto; min-height: 0;">
+                    @if (_loadingDrives)
+                    {
+                        <div class="d-flex align-items-center justify-content-center h-100 gap-2 text-muted">
+                            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                            <span style="font-size: 12.5px;">Cargando unidades...</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-column gap-1">
+                            @foreach (var drive in Drives)
+                            {
+                                <FolderNode @key="drive" Path="@drive" Name="@drive" Level="0" SelectedFolders="@SelectedFolders"
+                                            OnSelectionChanged="OnSelectionChanged" IsSingleMode="@IsSingleSelectionMode" />
+                            }
+                        </div>
+                    }
+                </div>
             </div>
-            <div class="modal-footer py-2 d-flex justify-content-between">
-                <span class="text-muted small">
+
+            <div class="modal-footer d-flex justify-content-between">
+                <span class="text-muted tabular-nums" style="font-size: 12px;">
                     @(IsSingleSelectionMode
                         ? (SelectedFolders.Any() ? "1 carpeta seleccionada" : "Ninguna carpeta seleccionada")
-                        : $"{SelectedFolders.Count} carpetas seleccionadas")
+                        : $"{SelectedFolders.Count} carpeta{(SelectedFolders.Count != 1 ? "s" : "")} seleccionada{(SelectedFolders.Count != 1 ? "s" : "")}")
                 </span>
-                <div>
-                    <button type="button" class="btn btn-secondary btn-sm" @onclick="Cancel">Cancelar</button>
-                    <button type="button" class="btn btn-primary btn-sm" @onclick="Accept"
-                        disabled="@(!SelectedFolders.Any())">Aceptar</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="cmd-btn" @onclick="Cancel">Cancelar</button>
+                    <button type="button" class="cmd-btn cmd-btn-primary" @onclick="Accept"
+                            disabled="@(!SelectedFolders.Any())">
+                        Aceptar
+                    </button>
                 </div>
             </div>
         </div>
@@ -59,12 +121,19 @@
     [Parameter]
     public EventCallback OnCancel { get; set; }
 
+    private sealed record QuickFolder(string Label, string Path);
+
     private List<string> Drives = new();
-    private HashSet<string> SelectedFolders = new();
+    private List<QuickFolder> _quickFolders = new();
+    private HashSet<string> SelectedFolders = new(StringComparer.OrdinalIgnoreCase);
     private bool _loadingDrives = true;
+    private string _manualPath = "";
+    private string _pathError = "";
 
     protected override async Task OnInitializedAsync()
     {
+        BuildQuickFolders();
+
         await Task.Run(() =>
         {
             try
@@ -76,7 +145,6 @@
             }
             catch
             {
-                // Fallback por plataforma: en Windows usar C:\, en otras plataformas usar raiz '/'
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     Drives = new List<string> { "C:\\" };
                 else
@@ -86,8 +154,30 @@
         _loadingDrives = false;
     }
 
+    private void BuildQuickFolders()
+    {
+        var candidates = new List<(string label, string? path)>
+        {
+            ("Escritorio", Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)),
+            ("Descargas", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")),
+            ("Videos", Environment.GetFolderPath(Environment.SpecialFolder.MyVideos)),
+            ("Documentos", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),
+            ("OneDrive", Environment.GetEnvironmentVariable("OneDrive"))
+        };
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (label, path) in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path) && seen.Add(path))
+            {
+                _quickFolders.Add(new QuickFolder(label, path));
+            }
+        }
+    }
+
     private void OnSelectionChanged((string path, bool isSelected) args)
     {
+        _pathError = "";
         if (IsSingleSelectionMode && args.isSelected)
         {
             SelectedFolders.Clear();
@@ -103,6 +193,46 @@
         }
 
         StateHasChanged();
+    }
+
+    private void ToggleQuickFolder(string path)
+    {
+        bool currentlySelected = SelectedFolders.Contains(path);
+        OnSelectionChanged((path, !currentlySelected));
+    }
+
+    private void RemoveSelectedFolder(string path)
+    {
+        SelectedFolders.Remove(path);
+    }
+
+    private void OnManualPathKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddManualPath();
+        }
+    }
+
+    private void AddManualPath()
+    {
+        _pathError = "";
+        var trimmed = _manualPath.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(trimmed)) return;
+
+        if (!Directory.Exists(trimmed))
+        {
+            _pathError = $"La carpeta no existe o no es accesible: {trimmed}";
+            return;
+        }
+
+        if (IsSingleSelectionMode)
+        {
+            SelectedFolders.Clear();
+        }
+
+        SelectedFolders.Add(Path.GetFullPath(trimmed));
+        _manualPath = "";
     }
 
     private async Task Accept()

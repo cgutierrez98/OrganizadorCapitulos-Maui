@@ -12,6 +12,14 @@
     <link rel="stylesheet" href="css/theme.css" />
     <link rel="stylesheet" href="OrganizadorCapitulos.Maui.styles.css" />
     <link rel="icon" href="data:,">
+    <script>
+        try {
+            var savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark' || savedTheme === 'light') {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+            }
+        } catch { }
+    </script>
 </head>
 
 <body>

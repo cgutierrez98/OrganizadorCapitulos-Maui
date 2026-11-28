@@ -3,120 +3,131 @@
 
 @if (SelectedFile == null)
 {
-    <div class="empty-state empty-state-compact">
-        <div class="empty-state-icon" aria-hidden="true">Editar</div>
-        <div class="empty-state-copy">
-            <h3>Selecciona un archivo</h3>
-            <p>Cuando elijas una película o capítulo podrás revisar sus metadatos, aplicar cambios en lote y elegir la estrategia de renombrado.</p>
-        </div>
+    <div class="inspector-empty">
+        <Icon Name="sliders" Size="24" />
+        <strong style="font-size: 13px; color: var(--text-primary);">Ningún archivo seleccionado</strong>
+        <span style="font-size: 12px; max-width: 24ch;">Selecciona un archivo de la lista para editar sus metadatos o aplicar cambios en lote.</span>
     </div>
 }
 else
 {
-    <div class="details-stack">
+    <div class="inspector-section">
+        <h3 class="inspector-section-title">
+            <span>Archivo</span>
+            <span class="status-pill @GetStatusClass(SelectedFile.Status)">
+                <span class="status-dot"></span>
+                <span>@GetStatusLabel(SelectedFile.Status)</span>
+            </span>
+        </h3>
+        <div class="inspector-filename" title="@SelectedFile.FullPath">@SelectedFile.OriginalName</div>
+    </div>
+
+    <div class="inspector-section">
+        <h3 class="inspector-section-title">
+            <span>@(SelectedMode == RenameMode.Movie ? "Película" : "Episodio")</span>
+        </h3>
+
         @if (SelectedMode == RenameMode.Movie)
         {
-            <section class="editor-card">
-                <div class="editor-card-header">
-                    <span class="panel-kicker">Metadatos</span>
-                    <h3 class="editor-card-title">Información de la película</h3>
-                </div>
+            <div class="field-group">
+                <label class="field-label" for="movie-title">Título</label>
+                <input id="movie-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
+                       @bind:after="OnChanged" placeholder="Ej: El Padrino" />
+            </div>
 
-                <div class="field-group">
-                    <div class="field-label-row">
-                        <label class="form-label field-label mb-0" for="movie-title">Título de la película</label>
-                    </div>
-                    <input id="movie-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
-                        @bind:after="OnChanged" placeholder="Ej: El Padrino" />
-                </div>
-
-                <div class="field-group">
-                    <label class="form-label field-label" for="movie-year">Año de estreno</label>
-                    <input id="movie-year" type="number" class="form-control" @bind="SelectedFile.Year"
-                        @bind:after="OnChanged" placeholder="Ej: 1972" min="1880" max="2100" />
-                </div>
-            </section>
+            <div class="field-group">
+                <label class="field-label" for="movie-year">Año</label>
+                <input id="movie-year" type="number" class="form-control" @bind="SelectedFile.Year"
+                       @bind:after="OnChanged" placeholder="Ej: 1972" min="1880" max="2100" />
+            </div>
         }
         else
         {
-            <section class="editor-card">
-                <div class="editor-card-header">
-                    <span class="panel-kicker">Metadatos</span>
-                    <h3 class="editor-card-title">Información del episodio</h3>
+            <div class="field-group">
+                <div class="field-label-row">
+                    <label class="field-label" for="series-title">Serie</label>
+                    @if (!string.IsNullOrWhiteSpace(SelectedFile.SeriesTitle))
+                    {
+                        <button type="button" class="batch-link-btn"
+                                @onclick="() => OnApplySeriesTitleToAll.InvokeAsync(SelectedFile.SeriesTitle)"
+                                title="Aplicar este nombre de serie a todos los archivos marcados">
+                            Aplicar a todos
+                        </button>
+                    }
+                </div>
+                <input id="series-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
+                       @bind:after="OnChanged" placeholder="Ej: Breaking Bad" />
+            </div>
+
+            <div class="field-grid">
+                <div class="field-group">
+                    <div class="field-label-row">
+                        <label class="field-label" for="season-number">Temporada</label>
+                        <button type="button" class="batch-link-btn"
+                                @onclick="() => OnApplySeasonToAll.InvokeAsync(SelectedFile.Season)"
+                                title="Aplicar esta temporada a todos los archivos marcados">
+                            A todos
+                        </button>
+                    </div>
+                    <input id="season-number" type="number" class="form-control" @bind="SelectedFile.Season"
+                           @bind:after="OnChanged" min="0" />
                 </div>
 
                 <div class="field-group">
                     <div class="field-label-row">
-                        <label class="form-label field-label mb-0" for="series-title">Nombre de la serie</label>
-                        @if (!string.IsNullOrWhiteSpace(SelectedFile.SeriesTitle))
-                        {
-                            <button type="button" class="btn-apply-batch"
-                                @onclick="() => OnApplySeriesTitleToAll.InvokeAsync(SelectedFile.SeriesTitle)"
-                                title="Aplicar este nombre de serie a todos los archivos marcados">
-                                Aplicar a todos
-                            </button>
-                        }
-                    </div>
-                    <input id="series-title" type="text" class="form-control" @bind="SelectedFile.SeriesTitle"
-                        @bind:after="OnChanged" placeholder="Ej: Breaking Bad" />
-                </div>
-
-                <div class="field-grid">
-                    <div class="field-group">
-                        <div class="field-label-row">
-                            <label class="form-label field-label mb-0" for="season-number">Temporada</label>
-                            <button type="button" class="btn-apply-batch"
-                                @onclick="() => OnApplySeasonToAll.InvokeAsync(SelectedFile.Season)"
-                                title="Aplicar esta temporada a todos los archivos marcados">
-                                A todos
-                            </button>
-                        </div>
-                        <input id="season-number" type="number" class="form-control" @bind="SelectedFile.Season"
-                            @bind:after="OnChanged" min="0" />
-                    </div>
-                    <div class="field-group">
-                        <div class="field-label-row">
-                            <label class="form-label field-label mb-0" for="episode-number">Episodio</label>
-                            <button type="button" class="btn-apply-batch"
+                        <label class="field-label" for="episode-number">Episodio</label>
+                        <button type="button" class="batch-link-btn"
                                 @onclick="() => OnRenumberFromEpisode.InvokeAsync(Math.Max(1, SelectedFile.Episode))"
                                 title="Renumerar todos los archivos marcados secuencialmente desde este episodio">
-                                Secuencial
-                            </button>
-                        </div>
-                        <input id="episode-number" type="number" class="form-control" @bind="SelectedFile.Episode"
-                            @bind:after="OnChanged" min="1" />
+                            Secuencial
+                        </button>
                     </div>
+                    <input id="episode-number" type="number" class="form-control" @bind="SelectedFile.Episode"
+                           @bind:after="OnChanged" min="1" />
                 </div>
-
-                <div class="field-group">
-                    <label class="form-label field-label" for="episode-title">Título del episodio</label>
-                    <input id="episode-title" type="text" class="form-control" @bind="SelectedFile.EpisodeTitle"
-                        @bind:after="OnChanged" placeholder="Ej: Pilot (opcional)" />
-                </div>
-            </section>
-        }
-
-        <section class="editor-card">
-            <div class="editor-card-header">
-                <span class="panel-kicker">Resultado</span>
-                <h3 class="editor-card-title">Vista previa del nuevo nombre</h3>
             </div>
 
-            @if (!string.IsNullOrEmpty(SelectedFile.NewName))
-            {
-                <div class="preview-card" aria-live="polite">
-                    <span class="preview-label">Nombre generado</span>
-                    <code class="preview-value">@SelectedFile.NewName</code>
+            <div class="field-group">
+                <label class="field-label" for="episode-title">Título del episodio</label>
+                <input id="episode-title" type="text" class="form-control" @bind="SelectedFile.EpisodeTitle"
+                       @bind:after="OnChanged" placeholder="Opcional" />
+            </div>
+        }
+    </div>
+
+    <div class="inspector-section">
+        <h3 class="inspector-section-title">Vista previa</h3>
+
+        @if (!string.IsNullOrEmpty(SelectedFile.NewName))
+        {
+            <div class="diff-box" aria-live="polite">
+                <div class="diff-line">
+                    <span class="diff-tag">Antes</span>
+                    <span class="diff-old">@SelectedFile.OriginalName</span>
                 </div>
-            }
-            else
-            {
-                <div class="preview-card preview-card-muted">
-                    <span class="preview-label">Aún no disponible</span>
-                    <p class="mb-0">Completa los campos o ejecuta el análisis para preparar una propuesta de nombre.</p>
+                <div class="diff-line">
+                    <span class="diff-tag">Después</span>
+                    <span class="diff-new">@SelectedFile.NewName</span>
                 </div>
-            }
-        </section>
+            </div>
+        }
+        else
+        {
+            <div class="diff-box">
+                <span style="color: var(--text-muted); font-family: inherit;">Completa el título o ejecuta el análisis para generar el nuevo nombre.</span>
+            </div>
+        }
+
+        <button type="button"
+                class="cmd-btn cmd-btn-primary w-100 justify-content-center"
+                @onclick="() => OnRenameSelected.InvokeAsync()"
+                disabled="@(IsProcessing || string.IsNullOrEmpty(SelectedFile.NewName))"
+                data-shortcut="f2"
+                title="Renombrar solo este archivo (F2)">
+            <Icon Name="play" Size="13" />
+            <span>Renombrar seleccionado</span>
+            <span class="kbd-hint">F2</span>
+        </button>
     </div>
 }
 
@@ -128,7 +139,13 @@ else
     public RenameMode SelectedMode { get; set; }
 
     [Parameter]
+    public bool IsProcessing { get; set; }
+
+    [Parameter]
     public EventCallback OnChange { get; set; }
+
+    [Parameter]
+    public EventCallback OnRenameSelected { get; set; }
 
     [Parameter]
     public EventCallback<string> OnApplySeriesTitleToAll { get; set; }
@@ -147,4 +164,20 @@ else
         }
         await OnChange.InvokeAsync();
     }
+
+    private static string GetStatusClass(FileStatus status) => status switch
+    {
+        FileStatus.Done => "status-done",
+        FileStatus.Analyzed => "status-analyzed",
+        FileStatus.Error => "status-error",
+        _ => "status-pending"
+    };
+
+    private static string GetStatusLabel(FileStatus status) => status switch
+    {
+        FileStatus.Done => "Hecho",
+        FileStatus.Analyzed => "Listo",
+        FileStatus.Error => "Error",
+        _ => "Pendiente"
+    };
 }

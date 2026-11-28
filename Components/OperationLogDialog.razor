@@ -2,60 +2,66 @@
 @inject OperationLogService LogService
 
 <div class="modal fade show d-block modal-backdrop-themed" tabindex="-1" role="dialog" aria-modal="true"
-    aria-labelledby="operation-log-title">
+     aria-labelledby="operation-log-title">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header py-2">
-                <div class="modal-title-group">
-                    <span class="modal-kicker">Trazabilidad</span>
-                    <h5 class="modal-title" id="operation-log-title">Historial de operaciones</h5>
-                    <p class="modal-subtitle">Consulta los últimos cambios aplicados y su resultado para revisar el flujo de trabajo.</p>
-                </div>
+            <div class="modal-header">
+                <h5 class="modal-title" id="operation-log-title">
+                    <Icon Name="history" Size="15" />
+                    <span>Historial de operaciones</span>
+                </h5>
                 <button type="button" class="btn-close" data-shortcut="escape" @onclick="Close" aria-label="Cerrar diálogo"></button>
             </div>
+            @{
+                var entries = LogService.Entries;
+            }
             <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;">
-                @if (!LogService.Entries.Any())
+                @if (!entries.Any())
                 {
-                    <div class="p-4 text-center text-muted">
-                        No hay operaciones registradas
+                    <div class="p-4 text-center text-muted" style="font-size: 12.5px;">
+                        No hay operaciones registradas.
                     </div>
                 }
                 else
                 {
-                    <table class="table table-sm table-themed mb-0">
+                    <table class="table table-sm table-themed">
                         <thead>
                             <tr>
-                                <th style="width: 140px;">Fecha/Hora</th>
-                                <th style="width: 80px;">Acción</th>
+                                <th style="width: 125px;">Fecha</th>
+                                <th style="width: 82px;">Acción</th>
                                 <th>Origen</th>
                                 <th>Destino</th>
-                                <th style="width: 70px;">Estado</th>
+                                <th style="width: 56px; text-align: center;">Estado</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var entry in LogService.Entries.Take(100))
+                            @foreach (var entry in entries.Take(100))
                             {
                                 <tr>
-                                    <td class="small">@entry.Timestamp.ToString("dd/MM HH:mm:ss")</td>
+                                    <td class="tabular-nums text-muted">@entry.Timestamp.ToString("dd/MM HH:mm:ss")</td>
                                     <td>
-                                        <span class="badge @GetActionBadgeClass(entry.Action)">
+                                        <span class="status-pill @GetActionPillClass(entry.Action)">
                                             @entry.Action
                                         </span>
                                     </td>
-                                    <td class="small text-truncate" style="max-width: 200px;" title="@entry.OldName">
+                                    <td class="mono-cell text-truncate" style="max-width: 200px;" title="@entry.OldName">
                                         @entry.OldName
                                     </td>
-                                    <td class="small text-truncate" style="max-width: 200px;" title="@entry.NewName">
+                                    <td class="mono-cell text-truncate" style="max-width: 200px;" title="@entry.NewName">
                                         @entry.NewName
                                     </td>
-                                    <td>
+                                    <td style="text-align: center;">
                                         @if (entry.Status == "Success")
                                         {
-                                            <span class="badge bg-success">✓</span>
+                                            <span style="color: var(--success);" title="Correcto">
+                                                <Icon Name="check" Size="13" />
+                                            </span>
                                         }
                                         else
                                         {
-                                            <span class="badge bg-danger" title="@entry.Error">✗</span>
+                                            <span style="color: var(--danger);" title="@entry.Error">
+                                                <Icon Name="x" Size="13" />
+                                            </span>
                                         }
                                     </td>
                                 </tr>
@@ -64,17 +70,20 @@
                     </table>
                 }
             </div>
-            <div class="modal-footer py-2">
-                <span class="text-muted small me-auto">
-                    @LogService.Entries.Count operaciones registradas
+            <div class="modal-footer d-flex justify-content-between">
+                <span class="text-muted tabular-nums" style="font-size: 12px;">
+                    @entries.Count operación@(entries.Count != 1 ? "es" : "") registrada@(entries.Count != 1 ? "s" : "")
                 </span>
-                <button type="button" class="btn btn-outline-danger btn-sm" @onclick="ClearLog"
-                    disabled="@(!LogService.Entries.Any())">
-                    Limpiar
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">
-                    Cerrar
-                </button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="cmd-btn cmd-btn-danger-outline" @onclick="ClearLog"
+                            disabled="@(!entries.Any())">
+                        <Icon Name="trash" Size="13" />
+                        <span>Limpiar</span>
+                    </button>
+                    <button type="button" class="cmd-btn cmd-btn-primary" @onclick="Close">
+                        Cerrar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -84,17 +93,14 @@
     [Parameter]
     public EventCallback OnClose { get; set; }
 
-    private string GetActionBadgeClass(string action)
+    private static string GetActionPillClass(string action) => action switch
     {
-        return action switch
-        {
-            "Rename" => "bg-primary",
-            "Undo" => "bg-warning text-dark",
-            "Redo" => "bg-info text-dark",
-            "Move" => "bg-success",
-            _ => "bg-secondary"
-        };
-    }
+        "Rename" => "status-analyzed",
+        "Undo" => "status-error",
+        "Redo" => "status-pending",
+        "Move" => "status-done",
+        _ => "status-pending"
+    };
 
     private void ClearLog()
     {
